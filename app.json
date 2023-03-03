@@ -18,6 +18,7 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
+      "requireFullScreen": true,
       "bundleIdentifier": "com.echowaves.chimingclock",
       "buildNumber": "1",
       "config": {
@@ -40,6 +41,14 @@
         "projectId": "55781884-7bea-498b-8146-8dad09b29ee4"
       }
     },
+    "plugins": [
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "landscape"
+        }
+      ]
+    ],
     "owner": "echowaves"
   }
 }

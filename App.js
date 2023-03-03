@@ -9,6 +9,8 @@ export default function App() {
   const { height, width, scale, fontScale } = useWindowDimensions()
 
   const [currentTime, setCurrentTime] = useState(Date.now())
+  const [currentMinute, setCurrentMinute] = useState()
+
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(Date.now()), 1000)
     return () => {
@@ -17,8 +19,34 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    // console.log({ currentTime })
+    const minute = dayjs(currentTime).minute()
+
+    if (currentMinute !== minute) {
+      setCurrentMinute(minute)
+    }
   }, [currentTime])
+
+  useEffect(() => {
+    // console.log({ currentMinute })
+    switch (currentMinute) {
+      case 0:
+        play(0)
+        break
+      case 15:
+        play(15)
+        break
+      case 30:
+        play(30)
+        break
+      case 45:
+        play(45)
+        break
+    }
+  }, [currentMinute])
+
+  const play = (minute) => {
+    
+  }
 
   const styles = StyleSheet.create({
     container: {
