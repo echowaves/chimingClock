@@ -6,23 +6,23 @@ import { Audio } from "expo-av"
 import dayjs from "dayjs"
 
 const hoursSounds = {
-  1: require("./assets/hour1.m4a"),
-  2: require("./assets/hour2.m4a"),
-  3: require("./assets/hour3.m4a"),
-  4: require("./assets/hour4.m4a"),
-  5: require("./assets/hour5.m4a"),
-  6: require("./assets/hour6.m4a"),
-  7: require("./assets/hour7.m4a"),
-  8: require("./assets/hour8.m4a"),
-  9: require("./assets/hour9.m4a"),
-  10: require("./assets/hour10.m4a"),
-  11: require("./assets/hour11.m4a"),
-  12: require("./assets/hour12.m4a"),
+  1: require("./assets/hour1.mp3"),
+  2: require("./assets/hour2.mp3"),
+  3: require("./assets/hour3.mp3"),
+  4: require("./assets/hour4.mp3"),
+  5: require("./assets/hour5.mp3"),
+  6: require("./assets/hour6.mp3"),
+  7: require("./assets/hour7.mp3"),
+  8: require("./assets/hour8.mp3"),
+  9: require("./assets/hour9.mp3"),
+  10: require("./assets/hour10.mp3"),
+  11: require("./assets/hour11.mp3"),
+  12: require("./assets/hour12.mp3"),
 }
 const minutesSounds = {
-  15: require("./assets/minute15.m4a"),
-  30: require("./assets/minute30.m4a"),
-  45: require("./assets/minute45.m4a"),
+  15: require("./assets/minute15.mp3"),
+  30: require("./assets/minute30.mp3"),
+  45: require("./assets/minute45.mp3"),
 }
 
 export default function App() {
