@@ -1,6 +1,7 @@
 import { useEffect, useState, useContext } from "react"
 import { StyleSheet, Text, View, useWindowDimensions } from "react-native"
 import { useKeepAwake } from "expo-keep-awake"
+import { Audio } from "expo-av"
 
 import dayjs from "dayjs"
 
@@ -44,8 +45,31 @@ export default function App() {
     }
   }, [currentMinute])
 
-  const play = (minute) => {
+  const play = async (minute) => {
+    if (minute === 0) {
+      const hour = dayjs(currentTime).hour()
+      const hourAsset = switch(minute) {
+        case 15:
+          return require(`./assets/minute15.mp3`)
+case 30:
+  return require(`./assets/minute30.mp3`)
+  case 45:
+    return require(`./assets/minute45.mp3`)
     
+      }
+
+      const minuteAsset = `./assets/hour${minute}.mp3`
+      const { sound } = await Audio.Sound.createAsync(require(hourString))
+
+      await sound.playAsync()
+      await sound.unloadAsync()
+    } else {
+      const { sound } = await Audio.Sound.createAsync(
+        require(`./assets/minute${minute}.mp3`),
+      )
+      await sound.playAsync()
+      await sound.unloadAsync()
+    }
   }
 
   const styles = StyleSheet.create({
