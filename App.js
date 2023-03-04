@@ -76,15 +76,17 @@ export default function App() {
   const play = async (minute) => {
     if (minute === 0) {
       const hour = dayjs(currentTime).hour() % 12
-      console.log({ hour, sound: hoursSounds.get(hour) })
-      const { sound } = await Audio.Sound.createAsync(hoursSounds.get(hour))
+      const hoursSound = hoursSounds.get(hour)
+      console.log({ hour, hoursSound })
+      const { sound } = await Audio.Sound.createAsync(hoursSound)
       await sound.playAsync()
-      await sound.unloadAsync()
+      // await sound.unloadAsync()
     } else {
-      console.log({ minute, sound: minutesSounds.get(minute) })
-      const { sound } = await Audio.Sound.createAsync(minutesSounds.get(minute))
+      const minuteSound = minutesSounds.get(minute)
+      console.log({ minute, minuteSound })
+      const { sound } = await Audio.Sound.createAsync(minuteSound)
       await sound.playAsync()
-      await sound.unloadAsync()
+      // await sound.unloadAsync()
     }
   }
 
