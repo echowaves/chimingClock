@@ -20,10 +20,10 @@
       "supportsTablet": true,
       "requireFullScreen": true,
       "bundleIdentifier": "com.echowaves.chimingclock",
-      "buildNumber": "3",
       "config": {
         "usesNonExemptEncryption": false
-      }
+      },
+      "buildNumber": "4"
     },
     "android": {
       "adaptiveIcon": {
@@ -31,7 +31,13 @@
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.echowaves.chimingclock",
-      "versionCode": 3
+      "androidNavigationBar": {
+        "visible": "leanback"
+      },
+      "androidStatusBar": {
+        "hidden": true
+      },
+      "versionCode": 4
     },
     "web": {
       "favicon": "./assets/favicon.png"

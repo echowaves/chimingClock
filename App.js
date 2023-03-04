@@ -34,7 +34,7 @@ export default function App() {
   const [currentMinute, setCurrentMinute] = useState()
 
   useEffect(() => {
-    console.log("init")
+    // console.log("init")
     ;(async () => {
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
 
@@ -77,13 +77,13 @@ export default function App() {
     if (minute === 0) {
       const hour = dayjs(currentTime).hour() % 12
       const hoursSound = hoursSounds.get(hour)
-      console.log({ hour, hoursSound })
+      // console.log({ hour, hoursSound })
       const { sound } = await Audio.Sound.createAsync(hoursSound)
       await sound.playAsync()
       // await sound.unloadAsync()
     } else {
       const minuteSound = minutesSounds.get(minute)
-      console.log({ minute, minuteSound })
+      // console.log({ minute, minuteSound })
       const { sound } = await Audio.Sound.createAsync(minuteSound)
       await sound.playAsync()
       // await sound.unloadAsync()
