@@ -5,41 +5,44 @@ import { Audio } from "expo-av"
 
 import dayjs from "dayjs"
 
-const hoursSounds = {
-  1: require("./assets/hour1.mp3"),
-  2: require("./assets/hour2.mp3"),
-  3: require("./assets/hour3.mp3"),
-  4: require("./assets/hour4.mp3"),
-  5: require("./assets/hour5.mp3"),
-  6: require("./assets/hour6.mp3"),
-  7: require("./assets/hour7.mp3"),
-  8: require("./assets/hour8.mp3"),
-  9: require("./assets/hour9.mp3"),
-  10: require("./assets/hour10.mp3"),
-  11: require("./assets/hour11.mp3"),
-  12: require("./assets/hour12.mp3"),
-}
-const minutesSounds = {
-  15: require("./assets/minute15.mp3"),
-  30: require("./assets/minute30.mp3"),
-  45: require("./assets/minute45.mp3"),
-}
+const hoursSounds = new Map([
+  [0, require("./assets/hour0.mp3")],
+  [1, require("./assets/hour1.mp3")],
+  [2, require("./assets/hour2.mp3")],
+  [3, require("./assets/hour3.mp3")],
+  [4, require("./assets/hour4.mp3")],
+  [5, require("./assets/hour5.mp3")],
+  [6, require("./assets/hour6.mp3")],
+  [7, require("./assets/hour7.mp3")],
+  [8, require("./assets/hour8.mp3")],
+  [9, require("./assets/hour9.mp3")],
+  [10, require("./assets/hour10.mp3")],
+  [11, require("./assets/hour11.mp3")],
+])
+
+const minutesSounds = new Map([
+  [15, require("./assets/minute15.mp3")],
+  [30, require("./assets/minute30.mp3")],
+  [45, require("./assets/minute45.mp3")],
+])
 
 export default function App() {
   useKeepAwake()
   const { height, width, scale, fontScale } = useWindowDimensions()
 
-  const [currentTime, setCurrentTime] = useState(Date.now())
+  const [currentTime, setCurrentTime] = useState(dayjs())
   const [currentMinute, setCurrentMinute] = useState()
 
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(Date.now()), 1000)
+    const interval = setInterval(() => setCurrentTime(dayjs()), 1000)
     return () => {
       clearInterval(interval)
     }
   }, [])
 
   useEffect(() => {
+    console.log({ currentTime })
+
     const minute = dayjs(currentTime).minute()
 
     if (currentMinute !== minute) {
@@ -49,32 +52,30 @@ export default function App() {
 
   useEffect(() => {
     // console.log({ currentMinute })
-    switch (currentMinute) {
-      case 0:
-        play(0)
-        break
-      case 15:
-        play(15)
-        break
-      case 30:
-        play(30)
-        break
-      case 45:
-        play(45)
-        break
+    if (
+      currentMinute === 0 ||
+      currentMinute === 15 ||
+      currentMinute === 30 ||
+      currentMinute === 45
+    ) {
+      play(currentMinute)
     }
   }, [currentMinute])
 
   const play = async (minute) => {
+    await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
+
     if (minute === 0) {
-      const hour = dayjs(currentTime).hour()
-      const { sound } = await Audio.Sound.createAsync(hoursSounds[hour])
+      const hour = dayjs(currentTime).hour() % 12
+      console.log({ hour, sound: hoursSounds.get(hour) })
+      const { sound } = await Audio.Sound.createAsync(hoursSounds.get(hour))
       await sound.playAsync()
-      await sound.unloadAsync()
+      // await sound.unloadAsync()
     } else {
-      const { sound } = await Audio.Sound.createAsync(minutesSounds[minute])
+      console.log({ minute, sound: minutesSounds.get(minute) })
+      const { sound } = await Audio.Sound.createAsync(minutesSounds.get(minute))
       await sound.playAsync()
-      await sound.unloadAsync()
+      // await sound.unloadAsync()
     }
   }
 
