@@ -34,6 +34,19 @@ export default function App() {
   const [currentMinute, setCurrentMinute] = useState()
 
   useEffect(() => {
+    console.log("init")
+    ;(async () => {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
+
+      const { sound } = await Audio.Sound.createAsync(
+        require("./assets/ticktack.mp3"),
+      )
+      //  await sound.setIsLooping(true)
+      await sound.playAsync()
+      await sound.setIsLoopingAsync(true)
+      // await sound.unloadAsync()
+    })()
+
     const interval = setInterval(() => setCurrentTime(dayjs()), 1000)
     return () => {
       clearInterval(interval)
@@ -41,8 +54,6 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    console.log({ currentTime })
-
     const minute = dayjs(currentTime).minute()
 
     if (currentMinute !== minute) {
@@ -63,19 +74,17 @@ export default function App() {
   }, [currentMinute])
 
   const play = async (minute) => {
-    await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
-
     if (minute === 0) {
       const hour = dayjs(currentTime).hour() % 12
       console.log({ hour, sound: hoursSounds.get(hour) })
       const { sound } = await Audio.Sound.createAsync(hoursSounds.get(hour))
       await sound.playAsync()
-      // await sound.unloadAsync()
+      await sound.unloadAsync()
     } else {
       console.log({ minute, sound: minutesSounds.get(minute) })
       const { sound } = await Audio.Sound.createAsync(minutesSounds.get(minute))
       await sound.playAsync()
-      // await sound.unloadAsync()
+      await sound.unloadAsync()
     }
   }
 
