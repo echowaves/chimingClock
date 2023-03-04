@@ -45,7 +45,7 @@
       [
         "expo-screen-orientation",
         {
-          "initialOrientation": "landscape"
+          "initialOrientation": "LANDSCAPE"
         }
       ]
     ],
