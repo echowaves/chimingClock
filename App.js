@@ -122,7 +122,7 @@ export default function App() {
   return (
     <View style={styles.container}>
       <Text style={styles.time}>{dayjs(currentTime).format("hh:mm")}</Text>
-      <StatusBar hidden={false} />
+      <StatusBar hidden={true} />
     </View>
   )
 }
