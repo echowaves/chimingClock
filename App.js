@@ -1,6 +1,8 @@
 import { useEffect, useState, useContext } from "react"
 import { StyleSheet, Text, View, useWindowDimensions } from "react-native"
 import { useKeepAwake } from "expo-keep-awake"
+import { StatusBar } from "expo-status-bar"
+
 import { Audio } from "expo-av"
 
 import dayjs from "dayjs"
@@ -120,6 +122,7 @@ export default function App() {
   return (
     <View style={styles.container}>
       <Text style={styles.time}>{dayjs(currentTime).format("hh:mm")}</Text>
+      <StatusBar hidden={false} />
     </View>
   )
 }
