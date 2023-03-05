@@ -5,27 +5,6 @@ import { Audio } from "expo-av"
 
 import dayjs from "dayjs"
 
-const hoursSounds = new Map([
-  [0, require("./assets/hour0.mp3")],
-  [1, require("./assets/hour1.mp3")],
-  [2, require("./assets/hour2.mp3")],
-  [3, require("./assets/hour3.mp3")],
-  [4, require("./assets/hour4.mp3")],
-  [5, require("./assets/hour5.mp3")],
-  [6, require("./assets/hour6.mp3")],
-  [7, require("./assets/hour7.mp3")],
-  [8, require("./assets/hour8.mp3")],
-  [9, require("./assets/hour9.mp3")],
-  [10, require("./assets/hour10.mp3")],
-  [11, require("./assets/hour11.mp3")],
-])
-
-const minutesSounds = new Map([
-  [15, require("./assets/minute15.mp3")],
-  [30, require("./assets/minute30.mp3")],
-  [45, require("./assets/minute45.mp3")],
-])
-
 export default function App() {
   useKeepAwake()
   const { height, width, scale, fontScale } = useWindowDimensions()
@@ -33,9 +12,46 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(dayjs())
   const [currentMinute, setCurrentMinute] = useState()
 
+  const [hoursSounds, setHoursSounds] = useState()
+  const [minutesSounds, setMinutesSounds] = useState()
+
+  const init = async () => {
+    const hours = new Map()
+    hours.set(0, await Audio.Sound.createAsync(require("./assets/hour0.mp3")))
+    hours.set(1, await Audio.Sound.createAsync(require("./assets/hour1.mp3")))
+    hours.set(2, await Audio.Sound.createAsync(require("./assets/hour2.mp3")))
+    hours.set(3, await Audio.Sound.createAsync(require("./assets/hour3.mp3")))
+    hours.set(4, await Audio.Sound.createAsync(require("./assets/hour4.mp3")))
+    hours.set(5, await Audio.Sound.createAsync(require("./assets/hour5.mp3")))
+    hours.set(6, await Audio.Sound.createAsync(require("./assets/hour6.mp3")))
+    hours.set(7, await Audio.Sound.createAsync(require("./assets/hour7.mp3")))
+    hours.set(8, await Audio.Sound.createAsync(require("./assets/hour8.mp3")))
+    hours.set(9, await Audio.Sound.createAsync(require("./assets/hour9.mp3")))
+    hours.set(10, await Audio.Sound.createAsync(require("./assets/hour10.mp3")))
+    hours.set(11, await Audio.Sound.createAsync(require("./assets/hour11.mp3")))
+
+    const minutes = new Map()
+    minutes.set(
+      15,
+      await Audio.Sound.createAsync(require("./assets/minute15.mp3")),
+    )
+    minutes.set(
+      30,
+      await Audio.Sound.createAsync(require("./assets/minute30.mp3")),
+    )
+    minutes.set(
+      45,
+      await Audio.Sound.createAsync(require("./assets/minute45.mp3")),
+    )
+
+    setHoursSounds(hours)
+    setMinutesSounds(minutes)
+  }
+
   useEffect(() => {
-    // console.log("init")
     ;(async () => {
+      await init()
+
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
 
       const { sound } = await Audio.Sound.createAsync(
@@ -62,32 +78,26 @@ export default function App() {
   }, [currentTime])
 
   useEffect(() => {
-    // console.log({ currentMinute })
     if (
-      currentMinute === 0 ||
-      currentMinute === 15 ||
-      currentMinute === 30 ||
-      currentMinute === 45
+      (currentMinute === 0 ||
+        currentMinute === 15 ||
+        currentMinute === 30 ||
+        currentMinute === 45) &&
+      minutesSounds
     ) {
       play(currentMinute)
     }
   }, [currentMinute])
 
   const play = async (minute) => {
-    if (minute === 0) {
-      const hour = dayjs(currentTime).hour() % 12
-      const hoursSound = hoursSounds.get(hour)
-      // console.log({ hour, hoursSound })
-      const { sound } = await Audio.Sound.createAsync(hoursSound)
-      await sound.playAsync()
-      // await sound.unloadAsync()
-    } else {
-      const minuteSound = minutesSounds.get(minute)
-      // console.log({ minute, minuteSound })
-      const { sound } = await Audio.Sound.createAsync(minuteSound)
-      await sound.playAsync()
-      // await sound.unloadAsync()
-    }
+    // console.log({ minute })
+    const { sound } =
+      minute === 0
+        ? hoursSounds.get(dayjs(currentTime).hour() % 12)
+        : minutesSounds.get(minute)
+
+    await sound.playAsync()
+    // await sound.unloadAsync()
   }
 
   const styles = StyleSheet.create({
@@ -104,12 +114,6 @@ export default function App() {
       color: "#d0fcc5",
       fontSize: width / 3 / fontScale, // divide the font size by the font scale
       fontWeight: "600",
-      // paddingHorizontal: 36,
-      // paddingVertical: 36,
-      // alignItems: "center",
-
-      // width: "100%", // Change width to '100%'
-      // height: "100%", // Change height to '100%'
     },
   })
 
