@@ -60,7 +60,7 @@ export default function App() {
 
   useEffect(() => {
     ;(async () => {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
+      // await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
       await init()
     })()
 
