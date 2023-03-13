@@ -18,6 +18,9 @@
     },
     "assetBundlePatterns": ["**/*"],
     "ios": {
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "supportsTablet": true,
       "requireFullScreen": true,
       "bundleIdentifier": "com.echowaves.chimingclock",
