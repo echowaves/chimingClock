@@ -194,58 +194,61 @@ export default function App() {
   if (firstScreen)
     return (
       <SafeAreaView style={styles.firstScreen}>
-        <ScrollView>
-          <Text style={styles.title}>
-            chimingClock will play chimes every 15 minutes. Sometimes it may get
-            too loud for you. The clock will chime only during the time range
-            specified below:
-          </Text>
-          <View
-            style={{
-              alignSelf: 'center',
-              width: '50%', // Change width to '100%'
-              paddingVertical: 20,
-              // height: "100%", // Change height to '100%'
-            }}
-          >
-            <RangeSlider
-              min={0}
-              max={24}
-              fromValueOnChange={(min) =>
-                setChimingTimeRange({ ...chimingTimeRange, min })
-              }
-              toValueOnChange={(max) =>
-                setChimingTimeRange({ ...chimingTimeRange, max })
-              }
-              initialFromValue={chimingTimeRange?.min}
-              initialToValue={chimingTimeRange?.max}
-              styleSize="large"
-            />
-          </View>
+        <Text style={styles.title}>
+          chimingClock will play chimes every 15 minutes. Sometimes it may get
+          too loud for you. The clock will chime only during the time range
+          specified below:
+        </Text>
 
-          <Pressable
-            onPress={() => setFirstScreen(false)}
-            style={{
+        <View
+          style={{
+            flexDirection: 'row',
+            width: '90%', // Change width to '100%'
+            // paddingVertical: 20,
+          }}
+        >
+          <RangeSlider
+            min={0}
+            max={24}
+            fromValueOnChange={(min) =>
+              setChimingTimeRange({ ...chimingTimeRange, min })
+            }
+            toValueOnChange={(max) =>
+              setChimingTimeRange({ ...chimingTimeRange, max })
+            }
+            initialFromValue={chimingTimeRange?.min}
+            initialToValue={chimingTimeRange?.max}
+            styleSize="large"
+            containerStyle={{
               alignSelf: 'center',
-              // width: '90%', // Change width to '100%'
-
-              alignItems: 'center',
-              // justifyContent: 'center',
+              width: '90%', // Change width to '100%'
               paddingVertical: 20,
-              paddingHorizontal: 32,
-              borderRadius: 10,
-              elevation: 5,
-              backgroundColor: 'black',
             }}
-          >
-            <Text style={{ fontWeight: '600', fontSize: 20, color: 'white' }}>
-              {`Start Chiming
+          />
+        </View>
+
+        <Pressable
+          onPress={() => setFirstScreen(false)}
+          style={{
+            alignSelf: 'center',
+            // width: '90%', // Change width to '100%'
+
+            alignItems: 'center',
+            // justifyContent: 'center',
+            paddingVertical: 20,
+            paddingHorizontal: 32,
+            borderRadius: 10,
+            elevation: 5,
+            backgroundColor: 'black',
+          }}
+        >
+          <Text style={{ fontWeight: '600', fontSize: 20, color: 'white' }}>
+            {`Start Chiming
 from ${dayjs(`2020-01-01 ${chimingTimeRange?.min}:00`).format('ha')} to ${dayjs(
-                `2020-01-01 ${chimingTimeRange?.max}:00`,
-              ).format('ha')}`}
-            </Text>
-          </Pressable>
-        </ScrollView>
+              `2020-01-01 ${chimingTimeRange?.max}:00`,
+            ).format('ha')}`}
+          </Text>
+        </Pressable>
       </SafeAreaView>
     )
 
