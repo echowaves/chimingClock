@@ -1,5 +1,13 @@
 import { useEffect, useState, useContext } from "react"
-import { StyleSheet, Text, View, useWindowDimensions } from "react-native"
+import {
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+} from "react-native"
 import { useKeepAwake } from "expo-keep-awake"
 import { StatusBar } from "expo-status-bar"
 
@@ -7,17 +15,47 @@ import { Audio } from "expo-av"
 
 import dayjs from "dayjs"
 
+import { TimePicker, ValueMap } from "react-native-simple-time-picker"
+import * as SecureStore from "expo-secure-store"
+
 export default function App() {
   useKeepAwake()
   const { height, width, scale, fontScale } = useWindowDimensions()
+
+  const [firstScreen, setFirstScreen] = useState(true)
+
+  const [silenceStartsValue, setSilenceStartsValue] = useState(null)
+  const [silenceEndsValue, setSilenceEndsValue] = useState(null)
 
   const [currentTime, setCurrentTime] = useState(dayjs())
   const [currentMinute, setCurrentMinute] = useState()
 
   const [hoursSounds, setHoursSounds] = useState()
   const [minutesSounds, setMinutesSounds] = useState()
+  const [tickSound, setTickSound] = useState()
 
-  const init = async () => {
+  const initSilenceTime = async () => {
+    // console.log(
+    //   "fromStore: ",
+    //   JSON.parse(await SecureStore.getItemAsync("silenceStartsValue")),
+    //   JSON.parse(await SecureStore.getItemAsync("silenceEndsValue")),
+    // )
+
+    setSilenceStartsValue(
+      JSON.parse(await SecureStore.getItemAsync("silenceStartsValue")) || {
+        ampm: "pm",
+        hours: 11,
+      },
+    )
+    setSilenceEndsValue(
+      JSON.parse(await SecureStore.getItemAsync("silenceEndsValue")) || {
+        ampm: "pm",
+        hours: 11,
+      },
+    )
+  }
+
+  const initSounds = async () => {
     const hours = new Map()
     hours.set(0, await Audio.Sound.createAsync(require("./assets/hour0.mp3")))
     hours.set(1, await Audio.Sound.createAsync(require("./assets/hour1.mp3")))
@@ -52,6 +90,7 @@ export default function App() {
     const { sound } = await Audio.Sound.createAsync(
       require("./assets/ticktack.mp3"),
     )
+    setTickSound(sound)
     //  await sound.setIsLooping(true)
     await sound.playAsync()
     await sound.setIsLoopingAsync(true)
@@ -60,8 +99,9 @@ export default function App() {
 
   useEffect(() => {
     ;(async () => {
-      // await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
-      await init()
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
+      await initSilenceTime()
+      await initSounds()
     })()
 
     const interval = setInterval(() => setCurrentTime(dayjs()), 1000)
@@ -79,6 +119,59 @@ export default function App() {
   }, [currentTime])
 
   useEffect(() => {
+    if (silenceStartsValue)
+      SecureStore.setItemAsync(
+        "silenceStartsValue",
+        JSON.stringify(silenceStartsValue),
+      )
+
+    if (silenceEndsValue)
+      SecureStore.setItemAsync(
+        "silenceEndsValue",
+        JSON.stringify(silenceEndsValue),
+      )
+
+    // console.log({
+    //   silenceStartsValue: JSON.stringify(silenceStartsValue),
+    //   silenceEndsValue: JSON.stringify(silenceEndsValue),
+    // })
+    isSoundEnabled()
+      ? tickSound?.setVolumeAsync(1)
+      : tickSound?.setVolumeAsync(0)
+  }, [silenceStartsValue, silenceEndsValue])
+
+  const isSoundEnabled = () => {
+    const currentHour = dayjs(currentTime).hour()
+
+    const silenceStartsHour =
+      silenceStartsValue?.hours + (silenceStartsValue?.ampm === "pm" ? 12 : 0)
+
+    const silenceEndsHour =
+      silenceEndsValue?.hours + (silenceEndsValue?.ampm === "pm" ? 12 : 0)
+    console.log({
+      currentHour,
+      silenceEndsHour,
+      silenceStartsHour,
+      enabled:
+        currentHour >= silenceEndsHour && currentHour < silenceStartsHour
+          ? true
+          : false,
+    })
+
+    // if (currentHour >= silenceEndsHour && currentHour > silenceStartsHour)
+    //   return true
+    // if (currentHour < silenceEndsHour && currentHour <= silenceStartsHour)
+    //   return true
+    return currentHour >= silenceEndsHour && currentHour < silenceStartsHour
+      ? true
+      : false
+  }
+
+  useEffect(() => {
+    isSoundEnabled()
+      ? tickSound?.setVolumeAsync(1)
+      : tickSound?.setVolumeAsync(0)
+
     if (
       (currentMinute === 0 ||
         currentMinute === 15 ||
@@ -98,11 +191,21 @@ export default function App() {
         : minutesSounds.get(minute)
 
     await sound.setPositionAsync(0)
+    await sound.setVolumeAsync(isSoundEnabled() ? 1 : 0)
     await sound.playAsync()
     // await sound.unloadAsync()
   }
 
   const styles = StyleSheet.create({
+    firstScreen: {
+      backgroundColor: "white",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "100%", // Change width to '100%'
+      height: "100%", // Change height to '100%'
+      // paddingHorizontal: 36,
+      // paddingVertical: 36,
+    },
     container: {
       backgroundColor: "black",
       alignItems: "center",
@@ -112,12 +215,112 @@ export default function App() {
       // paddingHorizontal: 36,
       // paddingVertical: 36,
     },
+
     time: {
       color: "#d0fcc5",
       fontSize: width / 3 / fontScale, // divide the font size by the font scale
       fontWeight: "600",
     },
+    title: { paddingTop: 30 },
   })
+
+  if (firstScreen)
+    return (
+      <SafeAreaView style={styles.firstScreen}>
+        <ScrollView>
+          <Text style={styles.title}>
+            chimingClock will play chimes every 15 minutes. Sometimes it may get
+            too loud for you. You can then silence the chimes for specific
+            hours:
+          </Text>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "100%", // Change width to '100%'
+              // height: "100%", // Change height to '100%'
+            }}
+          >
+            <View
+              style={{
+                flex: 2,
+                flexDirection: "column",
+                padding: 10,
+                margin: 10,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#eeeefe",
+                borderRadius: 10,
+
+                // width: "100%", // Change width to '100%'
+                // height: "100%", // Change height to '100%'
+              }}
+            >
+              <Text style={{ fontWeight: "600", fontSize: 20 }}>
+                Start the Silence at:
+              </Text>
+              <TimePicker
+                style={{
+                  // padding: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                value={silenceStartsValue}
+                onChange={setSilenceStartsValue}
+                pickerShows={["hours"]}
+                isAmpm
+              />
+            </View>
+            <View
+              style={{
+                flex: 2,
+                flexDirection: "column",
+                padding: 10,
+                margin: 10,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#eeeefe",
+                borderRadius: 10,
+                // width: "400px", // Change width to '100%'
+                // height: "100%", // Change height to '100%'
+              }}
+            >
+              <Text style={{ fontWeight: "600", fontSize: 20 }}>
+                End the Silence at:
+              </Text>
+              <TimePicker
+                style={{
+                  // padding: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                value={silenceEndsValue}
+                onChange={setSilenceEndsValue}
+                pickerShows={["hours"]}
+                isAmpm
+              />
+            </View>
+          </View>
+          <Pressable
+            onPress={() => setFirstScreen(false)}
+            style={{
+              alignItems: "center",
+              justifyContent: "center",
+              paddingVertical: 12,
+              paddingHorizontal: 32,
+              borderRadius: 10,
+              elevation: 5,
+              backgroundColor: "black",
+            }}
+          >
+            <Text style={{ fontWeight: "600", fontSize: 20, color: "white" }}>
+              Start the clock
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    )
 
   return (
     <View style={styles.container}>
