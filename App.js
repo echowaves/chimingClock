@@ -1,4 +1,5 @@
-import { useEffect, useState, useContext } from "react"
+/* eslint-disable global-require */
+import { useEffect, useState, useCallback } from 'react'
 import {
   StyleSheet,
   Text,
@@ -7,25 +8,23 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
-} from "react-native"
-import { useKeepAwake } from "expo-keep-awake"
-import { StatusBar } from "expo-status-bar"
+} from 'react-native'
+import { useKeepAwake } from 'expo-keep-awake'
+import { StatusBar } from 'expo-status-bar'
 
-import { Audio } from "expo-av"
+import { Audio } from 'expo-av'
 
-import dayjs from "dayjs"
+import dayjs from 'dayjs'
 
-import { TimePicker, ValueMap } from "react-native-simple-time-picker"
-import * as SecureStore from "expo-secure-store"
+import * as SecureStore from 'expo-secure-store'
+
+import RangeSlider from 'react-native-range-slider-expo'
 
 export default function App() {
   useKeepAwake()
   const { height, width, scale, fontScale } = useWindowDimensions()
 
   const [firstScreen, setFirstScreen] = useState(true)
-
-  const [silenceStartsValue, setSilenceStartsValue] = useState(null)
-  const [silenceEndsValue, setSilenceEndsValue] = useState(null)
 
   const [currentTime, setCurrentTime] = useState(dayjs())
   const [currentMinute, setCurrentMinute] = useState()
@@ -34,61 +33,52 @@ export default function App() {
   const [minutesSounds, setMinutesSounds] = useState()
   const [tickSound, setTickSound] = useState()
 
-  const initSilenceTime = async () => {
-    // console.log(
-    //   "fromStore: ",
-    //   JSON.parse(await SecureStore.getItemAsync("silenceStartsValue")),
-    //   JSON.parse(await SecureStore.getItemAsync("silenceEndsValue")),
-    // )
+  const CHIMING_TIME_RANGE = 'chimingTimeRange'
+  const [chimingTimeRange, setChimingTimeRange] = useState(null)
 
-    setSilenceStartsValue(
-      JSON.parse(await SecureStore.getItemAsync("silenceStartsValue")) || {
-        ampm: "pm",
-        hours: 11,
-      },
-    )
-    setSilenceEndsValue(
-      JSON.parse(await SecureStore.getItemAsync("silenceEndsValue")) || {
-        ampm: "pm",
-        hours: 11,
+  const initChimingTime = async () => {
+    setChimingTimeRange(
+      JSON.parse(await SecureStore.getItemAsync(CHIMING_TIME_RANGE)) || {
+        min: 0,
+        max: 24,
       },
     )
   }
 
   const initSounds = async () => {
     const hours = new Map()
-    hours.set(0, await Audio.Sound.createAsync(require("./assets/hour0.mp3")))
-    hours.set(1, await Audio.Sound.createAsync(require("./assets/hour1.mp3")))
-    hours.set(2, await Audio.Sound.createAsync(require("./assets/hour2.mp3")))
-    hours.set(3, await Audio.Sound.createAsync(require("./assets/hour3.mp3")))
-    hours.set(4, await Audio.Sound.createAsync(require("./assets/hour4.mp3")))
-    hours.set(5, await Audio.Sound.createAsync(require("./assets/hour5.mp3")))
-    hours.set(6, await Audio.Sound.createAsync(require("./assets/hour6.mp3")))
-    hours.set(7, await Audio.Sound.createAsync(require("./assets/hour7.mp3")))
-    hours.set(8, await Audio.Sound.createAsync(require("./assets/hour8.mp3")))
-    hours.set(9, await Audio.Sound.createAsync(require("./assets/hour9.mp3")))
-    hours.set(10, await Audio.Sound.createAsync(require("./assets/hour10.mp3")))
-    hours.set(11, await Audio.Sound.createAsync(require("./assets/hour11.mp3")))
+    hours.set(0, await Audio.Sound.createAsync(require('./assets/hour0.mp3')))
+    hours.set(1, await Audio.Sound.createAsync(require('./assets/hour1.mp3')))
+    hours.set(2, await Audio.Sound.createAsync(require('./assets/hour2.mp3')))
+    hours.set(3, await Audio.Sound.createAsync(require('./assets/hour3.mp3')))
+    hours.set(4, await Audio.Sound.createAsync(require('./assets/hour4.mp3')))
+    hours.set(5, await Audio.Sound.createAsync(require('./assets/hour5.mp3')))
+    hours.set(6, await Audio.Sound.createAsync(require('./assets/hour6.mp3')))
+    hours.set(7, await Audio.Sound.createAsync(require('./assets/hour7.mp3')))
+    hours.set(8, await Audio.Sound.createAsync(require('./assets/hour8.mp3')))
+    hours.set(9, await Audio.Sound.createAsync(require('./assets/hour9.mp3')))
+    hours.set(10, await Audio.Sound.createAsync(require('./assets/hour10.mp3')))
+    hours.set(11, await Audio.Sound.createAsync(require('./assets/hour11.mp3')))
 
     const minutes = new Map()
     minutes.set(
       15,
-      await Audio.Sound.createAsync(require("./assets/minute15.mp3")),
+      await Audio.Sound.createAsync(require('./assets/minute15.mp3')),
     )
     minutes.set(
       30,
-      await Audio.Sound.createAsync(require("./assets/minute30.mp3")),
+      await Audio.Sound.createAsync(require('./assets/minute30.mp3')),
     )
     minutes.set(
       45,
-      await Audio.Sound.createAsync(require("./assets/minute45.mp3")),
+      await Audio.Sound.createAsync(require('./assets/minute45.mp3')),
     )
 
     setHoursSounds(hours)
     setMinutesSounds(minutes)
 
     const { sound } = await Audio.Sound.createAsync(
-      require("./assets/ticktack.mp3"),
+      require('./assets/ticktack.mp3'),
     )
     setTickSound(sound)
     //  await sound.setIsLooping(true)
@@ -100,7 +90,7 @@ export default function App() {
   useEffect(() => {
     ;(async () => {
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
-      await initSilenceTime()
+      await initChimingTime()
       await initSounds()
     })()
 
@@ -118,70 +108,36 @@ export default function App() {
     }
   }, [currentTime])
 
-  useEffect(() => {
-    if (silenceStartsValue)
-      SecureStore.setItemAsync(
-        "silenceStartsValue",
-        JSON.stringify(silenceStartsValue),
-      )
-
-    if (silenceEndsValue)
-      SecureStore.setItemAsync(
-        "silenceEndsValue",
-        JSON.stringify(silenceEndsValue),
-      )
-
-    // console.log({
-    //   silenceStartsValue: JSON.stringify(silenceStartsValue),
-    //   silenceEndsValue: JSON.stringify(silenceEndsValue),
-    // })
-    isSoundEnabled()
-      ? tickSound?.setVolumeAsync(1)
-      : tickSound?.setVolumeAsync(0)
-  }, [silenceStartsValue, silenceEndsValue])
-
   const isSoundEnabled = () => {
     const currentHour = dayjs(currentTime).hour()
 
-    const silenceStartsHour =
-      silenceStartsValue?.hours + (silenceStartsValue?.ampm === "pm" ? 12 : 0)
+    if (
+      currentHour >= chimingTimeRange?.min &&
+      currentHour < chimingTimeRange?.max
+    ) {
+      return true
+    }
+    return false
+  }
 
-    const silenceEndsHour =
-      silenceEndsValue?.hours + (silenceEndsValue?.ampm === "pm" ? 12 : 0)
-    console.log({
-      currentHour,
-      silenceEndsHour,
-      silenceStartsHour,
-      enabled:
-        currentHour >= silenceEndsHour && currentHour < silenceStartsHour
-          ? true
-          : false,
-    })
-
-    // if (currentHour >= silenceEndsHour && currentHour > silenceStartsHour)
-    //   return true
-    // if (currentHour < silenceEndsHour && currentHour <= silenceStartsHour)
-    //   return true
-    return currentHour >= silenceEndsHour && currentHour < silenceStartsHour
-      ? true
-      : false
+  const resetTicking = () => {
+    if (isSoundEnabled()) {
+      tickSound?.setVolumeAsync(1)
+    } else {
+      tickSound?.setVolumeAsync(0)
+    }
   }
 
   useEffect(() => {
-    isSoundEnabled()
-      ? tickSound?.setVolumeAsync(1)
-      : tickSound?.setVolumeAsync(0)
-
-    if (
-      (currentMinute === 0 ||
-        currentMinute === 15 ||
-        currentMinute === 30 ||
-        currentMinute === 45) &&
-      minutesSounds
-    ) {
-      play(currentMinute)
+    resetTicking()
+    if (chimingTimeRange) {
+      SecureStore.setItemAsync(
+        CHIMING_TIME_RANGE,
+        JSON.stringify(chimingTimeRange),
+      )
     }
-  }, [currentMinute])
+    // console.log({ chimingTimeRange: JSON.stringify(chimingTimeRange) })
+  }, [chimingTimeRange])
 
   const play = async (minute) => {
     // console.log({ minute })
@@ -196,33 +152,48 @@ export default function App() {
     // await sound.unloadAsync()
   }
 
+  useEffect(() => {
+    resetTicking()
+    if (
+      (currentMinute === 0 ||
+        currentMinute === 15 ||
+        currentMinute === 30 ||
+        currentMinute === 45) &&
+      minutesSounds
+    ) {
+      play(currentMinute)
+    }
+  }, [currentMinute])
+
   const styles = StyleSheet.create({
     firstScreen: {
-      backgroundColor: "white",
-      alignItems: "center",
-      justifyContent: "center",
-      width: "100%", // Change width to '100%'
-      height: "100%", // Change height to '100%'
+      backgroundColor: 'white',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%', // Change width to '100%'
+      height: '100%', // Change height to '100%'
       // paddingHorizontal: 36,
       // paddingVertical: 36,
     },
     container: {
-      backgroundColor: "black",
-      alignItems: "center",
-      justifyContent: "center",
-      width: "100%", // Change width to '100%'
-      height: "100%", // Change height to '100%'
+      backgroundColor: 'black',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%', // Change width to '100%'
+      height: '100%', // Change height to '100%'
       // paddingHorizontal: 36,
       // paddingVertical: 36,
     },
 
     time: {
-      color: "#d0fcc5",
+      color: '#d0fcc5',
       fontSize: width / 3 / fontScale, // divide the font size by the font scale
-      fontWeight: "600",
+      fontWeight: '600',
     },
-    title: { paddingTop: 30 },
+    title: { paddingTop: 30, fontSize: 20 },
   })
+
+  const renderThumb = useCallback((name) => <Thumb name={name} />, [])
 
   if (firstScreen)
     return (
@@ -230,92 +201,52 @@ export default function App() {
         <ScrollView>
           <Text style={styles.title}>
             chimingClock will play chimes every 15 minutes. Sometimes it may get
-            too loud for you. You can then silence the chimes for specific
-            hours:
+            too loud for you. The clock will chime only during the time range
+            specified below:
           </Text>
           <View
             style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "100%", // Change width to '100%'
+              alignSelf: 'center',
+              width: '50%', // Change width to '100%'
+              paddingVertical: 20,
               // height: "100%", // Change height to '100%'
             }}
           >
-            <View
-              style={{
-                flex: 2,
-                flexDirection: "column",
-                padding: 10,
-                margin: 10,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "#eeeefe",
-                borderRadius: 10,
-
-                // width: "100%", // Change width to '100%'
-                // height: "100%", // Change height to '100%'
-              }}
-            >
-              <Text style={{ fontWeight: "600", fontSize: 20 }}>
-                Start the Silence at:
-              </Text>
-              <TimePicker
-                style={{
-                  // padding: 10,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                value={silenceStartsValue}
-                onChange={setSilenceStartsValue}
-                pickerShows={["hours"]}
-                isAmpm
-              />
-            </View>
-            <View
-              style={{
-                flex: 2,
-                flexDirection: "column",
-                padding: 10,
-                margin: 10,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "#eeeefe",
-                borderRadius: 10,
-                // width: "400px", // Change width to '100%'
-                // height: "100%", // Change height to '100%'
-              }}
-            >
-              <Text style={{ fontWeight: "600", fontSize: 20 }}>
-                End the Silence at:
-              </Text>
-              <TimePicker
-                style={{
-                  // padding: 10,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                value={silenceEndsValue}
-                onChange={setSilenceEndsValue}
-                pickerShows={["hours"]}
-                isAmpm
-              />
-            </View>
+            <RangeSlider
+              min={0}
+              max={24}
+              fromValueOnChange={(min) =>
+                setChimingTimeRange({ ...chimingTimeRange, min })
+              }
+              toValueOnChange={(max) =>
+                setChimingTimeRange({ ...chimingTimeRange, max })
+              }
+              initialFromValue={chimingTimeRange?.min}
+              initialToValue={chimingTimeRange?.max}
+              styleSize="large"
+            />
           </View>
+
           <Pressable
             onPress={() => setFirstScreen(false)}
             style={{
-              alignItems: "center",
-              justifyContent: "center",
-              paddingVertical: 12,
+              alignSelf: 'center',
+              // width: '90%', // Change width to '100%'
+
+              alignItems: 'center',
+              // justifyContent: 'center',
+              paddingVertical: 20,
               paddingHorizontal: 32,
               borderRadius: 10,
               elevation: 5,
-              backgroundColor: "black",
+              backgroundColor: 'black',
             }}
           >
-            <Text style={{ fontWeight: "600", fontSize: 20, color: "white" }}>
-              Start the clock
+            <Text style={{ fontWeight: '600', fontSize: 20, color: 'white' }}>
+              {`Start Chiming
+from ${dayjs(`2020-01-01 ${chimingTimeRange?.min}:00`).format('ha')} to ${dayjs(
+                `2020-01-01 ${chimingTimeRange?.max}:00`,
+              ).format('ha')}`}
             </Text>
           </Pressable>
         </ScrollView>
@@ -324,7 +255,7 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.time}>{dayjs(currentTime).format("hh:mm")}</Text>
+      <Text style={styles.time}>{dayjs(currentTime).format('hh:mm')}</Text>
       <StatusBar hidden={true} />
     </View>
   )
