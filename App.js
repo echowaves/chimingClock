@@ -120,12 +120,8 @@ export default function App() {
     return false
   }
 
-  const resetTicking = () => {
-    if (isSoundEnabled()) {
-      tickSound?.setVolumeAsync(1)
-    } else {
-      tickSound?.setVolumeAsync(0)
-    }
+  const resetTicking = async () => {
+    await tickSound.setVolumeAsync(isSoundEnabled() ? 1 : 0)
   }
 
   useEffect(() => {
