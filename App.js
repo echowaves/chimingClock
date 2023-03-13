@@ -253,9 +253,9 @@ from ${dayjs(`2020-01-01 ${chimingTimeRange?.min}:00`).format('ha')} to ${dayjs(
     )
 
   return (
-    <View style={styles.container}>
+    <Pressable style={styles.container} onPress={() => setFirstScreen(true)}>
       <Text style={styles.time}>{dayjs(currentTime).format('hh:mm')}</Text>
       <StatusBar hidden={true} />
-    </View>
+    </Pressable>
   )
 }
