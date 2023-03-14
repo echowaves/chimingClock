@@ -18,7 +18,7 @@ import dayjs from 'dayjs'
 
 import * as SecureStore from 'expo-secure-store'
 
-import RangeSlider from 'react-native-range-slider-expo'
+import MultiSlider from '@ptomasroos/react-native-multi-slider'
 
 export default function App() {
   useKeepAwake()
@@ -202,28 +202,39 @@ export default function App() {
 
         <View
           style={{
-            flexDirection: 'row',
+            flexDirection: 'column',
             width: '90%', // Change width to '100%'
             // paddingVertical: 20,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingBottom: 30,
           }}
         >
-          <RangeSlider
+          <Text
+            style={{
+              paddingTop: 10,
+              paddingBottom: 10,
+              fontSize: 20,
+              fontWeight: '600',
+            }}
+          >{`chimes active from ${dayjs(
+            `2020-01-01 ${chimingTimeRange?.min}:00`,
+          ).format('ha')} to ${dayjs(
+            `2020-01-01 ${chimingTimeRange?.max}:00`,
+          ).format('ha')}`}</Text>
+          <MultiSlider
+            isMarkersSeparated={true}
             min={0}
             max={24}
-            fromValueOnChange={(min) =>
-              setChimingTimeRange({ ...chimingTimeRange, min })
+            showSteps={true}
+            values={[chimingTimeRange?.min, chimingTimeRange?.max]}
+            onValuesChange={(value) =>
+              setChimingTimeRange({
+                ...chimingTimeRange,
+                min: value[0],
+                max: value[1],
+              })
             }
-            toValueOnChange={(max) =>
-              setChimingTimeRange({ ...chimingTimeRange, max })
-            }
-            initialFromValue={chimingTimeRange?.min}
-            initialToValue={chimingTimeRange?.max}
-            styleSize="large"
-            containerStyle={{
-              alignSelf: 'center',
-              width: '90%', // Change width to '100%'
-              paddingVertical: 20,
-            }}
           />
         </View>
 
@@ -243,10 +254,7 @@ export default function App() {
           }}
         >
           <Text style={{ fontWeight: '600', fontSize: 20, color: 'white' }}>
-            {`Start Chiming
-from ${dayjs(`2020-01-01 ${chimingTimeRange?.min}:00`).format('ha')} to ${dayjs(
-              `2020-01-01 ${chimingTimeRange?.max}:00`,
-            ).format('ha')}`}
+            {`Show the clock`}
           </Text>
         </Pressable>
       </SafeAreaView>
