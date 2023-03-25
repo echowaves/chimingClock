@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   ScrollView,
 } from 'react-native'
+
 import { useKeepAwake } from 'expo-keep-awake'
 import { StatusBar } from 'expo-status-bar'
 
@@ -22,12 +23,28 @@ import MultiSlider from '@ptomasroos/react-native-multi-slider'
 
 export default function App() {
   useKeepAwake()
-  const { height, width, scale, fontScale } = useWindowDimensions()
+  const { height, width } = useWindowDimensions()
+  const fontSize = width / 3
+
+  const fontSpecs = {
+    // fontFamily: 'undefined',
+    // fontStyle: 'italic',
+    fontSize,
+    // fontWeight: '600',
+    // width,
+  }
 
   const [firstScreen, setFirstScreen] = useState(true)
 
   const [currentTime, setCurrentTime] = useState(dayjs())
+
   const [currentMinute, setCurrentMinute] = useState()
+
+  const [currentText, setCurrentText] = useState('')
+  const [topShift, setTopShift] = useState(0)
+  const [leftShift, setLeftShift] = useState(0)
+  const [textWidth, setTextWidth] = useState(0)
+  const [textHeight, setTextHeight] = useState(0)
 
   const [hoursSounds, setHoursSounds] = useState()
   const [minutesSounds, setMinutesSounds] = useState()
@@ -94,7 +111,9 @@ export default function App() {
       await initSounds()
     })()
 
-    const interval = setInterval(() => setCurrentTime(dayjs()), 1000)
+    const interval = setInterval(() => {
+      setCurrentTime(dayjs())
+    }, 1000)
     return () => {
       clearInterval(interval)
     }
@@ -105,6 +124,22 @@ export default function App() {
 
     if (currentMinute !== minute) {
       setCurrentMinute(minute)
+      const text = dayjs(currentTime).format('hh:mm')
+      setCurrentText(text)
+      if (textHeight)
+        setTopShift(
+          height / 2 -
+            textHeight / 2 +
+            Math.floor(Math.random() * (textHeight / 2)) -
+            textHeight / 4,
+        )
+      if (textWidth)
+        setLeftShift(
+          width / 2 -
+            textWidth / 2 +
+            Math.floor(Math.random() * (textWidth / 4)) -
+            textWidth / 8,
+        )
     }
   }, [currentTime])
 
@@ -171,25 +206,17 @@ export default function App() {
       // paddingHorizontal: 36,
       // paddingVertical: 36,
     },
-    container: {
-      backgroundColor: 'black',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '100%', // Change width to '100%'
-      height: '100%', // Change height to '100%'
-      // paddingHorizontal: 36,
-      // paddingVertical: 36,
-    },
-
-    time: {
-      color: '#d0fcc5',
-      fontSize: width / 3 / fontScale, // divide the font size by the font scale
-      fontWeight: '600',
-    },
     title: { paddingTop: 30, fontSize: 20 },
   })
 
-  const renderThumb = useCallback((name) => <Thumb name={name} />, [])
+  // const renderThumb = useCallback((name) => <Thumb name={name} />, [])
+
+  const onLayout = (event) => {
+    // const { x, y } = event.nativeEvent.layout
+    // setCurrentTextSize({
+    setTextWidth(event.nativeEvent.layout.width)
+    setTextHeight(event.nativeEvent.layout.height)
+  }
 
   if (firstScreen)
     return (
@@ -259,10 +286,30 @@ export default function App() {
         </Pressable>
       </SafeAreaView>
     )
-
+  // console.log({ width })
   return (
-    <Pressable style={styles.container} onPress={() => setFirstScreen(true)}>
-      <Text style={styles.time}>{dayjs(currentTime).format('hh:mm')}</Text>
+    <Pressable
+      style={{
+        backgroundColor: 'black',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width, // Change width to '100%'
+        height, // Change height to '100%'
+      }}
+      onPress={() => setFirstScreen(true)}
+    >
+      <Text
+        style={{
+          ...fontSpecs,
+          color: '#d0fcc5',
+          position: 'absolute',
+          top: topShift,
+          left: leftShift,
+        }}
+        onLayout={onLayout}
+      >
+        {currentText}
+      </Text>
       <StatusBar hidden={true} />
     </Pressable>
   )
