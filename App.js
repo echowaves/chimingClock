@@ -288,29 +288,31 @@ export default function App() {
     )
   // console.log({ width })
   return (
-    <Pressable
-      style={{
-        backgroundColor: 'black',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width, // Change width to '100%'
-        height, // Change height to '100%'
-      }}
-      onPress={() => setFirstScreen(true)}
-    >
-      <Text
+    <SafeAreaView style={{ backgroundColor: 'black' }}>
+      <Pressable
         style={{
-          ...fontSpecs,
-          color: '#d0fcc5',
-          position: 'absolute',
-          top: topShift,
-          left: leftShift,
+          backgroundColor: 'black',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width, // Change width to '100%'
+          height, // Change height to '100%'
         }}
-        onLayout={onLayout}
+        onPress={() => setFirstScreen(true)}
       >
-        {currentText}
-      </Text>
-      <StatusBar hidden={true} />
-    </Pressable>
+        <Text
+          style={{
+            ...fontSpecs,
+            color: '#d0fcc5',
+            position: 'absolute',
+            top: topShift,
+            left: leftShift,
+          }}
+          onLayout={onLayout}
+        >
+          {currentText}
+        </Text>
+        <StatusBar hidden={true} />
+      </Pressable>
+    </SafeAreaView>
   )
 }
