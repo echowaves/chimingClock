@@ -20,7 +20,8 @@
     "production": {
       "ios": {
         "resourceClass": "m1-medium"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {
