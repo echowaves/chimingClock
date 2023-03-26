@@ -30,7 +30,7 @@ export default function App() {
     // fontFamily: 'undefined',
     // fontStyle: 'italic',
     fontSize,
-    // fontWeight: '600',
+    fontWeight: '600',
     // width,
   }
 
@@ -41,10 +41,15 @@ export default function App() {
   const [currentMinute, setCurrentMinute] = useState()
 
   const [currentText, setCurrentText] = useState('')
-  const [topShift, setTopShift] = useState(0)
-  const [leftShift, setLeftShift] = useState(0)
+
   const [textWidth, setTextWidth] = useState(0)
   const [textHeight, setTextHeight] = useState(0)
+
+  const [xStep, setXStep] = useState(1)
+  const [yStep, setYStep] = useState(1)
+
+  const [xShift, setXShift] = useState(0)
+  const [yShift, setYShift] = useState(0)
 
   const [hoursSounds, setHoursSounds] = useState()
   const [minutesSounds, setMinutesSounds] = useState()
@@ -122,24 +127,18 @@ export default function App() {
   useEffect(() => {
     const minute = dayjs(currentTime).minute()
 
+    if (xShift >= 55) setXStep(-1) // essential, this will shift direction eventually
+    if (xShift < -55) setXStep(1)
+    if (yShift > 55) setYStep(-1)
+    if (yShift < -55) setYStep(1)
+
+    setXShift(xShift + xStep)
+    setYShift(yShift + yStep)
+
     if (currentMinute !== minute) {
       setCurrentMinute(minute)
       const text = dayjs(currentTime).format('hh:mm')
       setCurrentText(text)
-      if (textHeight)
-        setTopShift(
-          height / 2 -
-            textHeight / 2 +
-            Math.floor(Math.random() * (textHeight / 2)) -
-            textHeight / 4,
-        )
-      if (textWidth)
-        setLeftShift(
-          width / 2 -
-            textWidth / 2 +
-            Math.floor(Math.random() * (textWidth / 4)) -
-            textWidth / 8,
-        )
     }
   }, [currentTime])
 
@@ -209,13 +208,13 @@ export default function App() {
     title: { paddingTop: 30, fontSize: 20 },
   })
 
-  // const renderThumb = useCallback((name) => <Thumb name={name} />, [])
-
   const onLayout = (event) => {
-    // const { x, y } = event.nativeEvent.layout
-    // setCurrentTextSize({
-    setTextWidth(event.nativeEvent.layout.width)
-    setTextHeight(event.nativeEvent.layout.height)
+    // console.log('on')
+
+    if (event.nativeEvent.layout.width !== textWidth)
+      setTextWidth(event.nativeEvent.layout.width)
+    if (event.nativeEvent.layout.height !== textHeight)
+      setTextHeight(event.nativeEvent.layout.height)
   }
 
   if (firstScreen)
@@ -304,8 +303,8 @@ export default function App() {
             ...fontSpecs,
             color: '#d0fcc5',
             position: 'absolute',
-            top: topShift,
-            left: leftShift,
+            left: width / 2 - textWidth / 2 + xShift,
+            top: height / 2 - textHeight / 2 + yShift,
           }}
           onLayout={onLayout}
         >
