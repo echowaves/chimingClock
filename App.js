@@ -137,7 +137,7 @@ export default function App() {
 
     if (currentMinute !== minute) {
       setCurrentMinute(minute)
-      const text = dayjs(currentTime).format('hh:mm')
+      const text = dayjs(currentTime).format('h:mm')
       setCurrentText(text)
     }
   }, [currentTime])
