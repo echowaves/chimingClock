@@ -1,14 +1,14 @@
 /* eslint-disable global-require */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import {
+  Pressable,
+  SafeAreaView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
 } from 'react-native'
+import 'react-native-gesture-handler'
 
 import { useKeepAwake } from 'expo-keep-awake'
 import { StatusBar } from 'expo-status-bar'

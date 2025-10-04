@@ -1,6 +1,5 @@
-module.exports = {
-  trailingComma: 'all',
-  tabWidth: 2,
-  semi: false,
-  singleQuote: true,
-}
+/* eslint-env node */
+exports.trailingComma = 'all'
+exports.tabWidth = 2
+exports.semi = false
+exports.singleQuote = true
