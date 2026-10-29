@@ -1,6 +1,7 @@
 /* eslint-disable global-require */
 import { useEffect, useState } from 'react'
 import {
+  Platform,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -21,18 +22,65 @@ import * as SecureStore from 'expo-secure-store'
 
 import MultiSlider from '@ptomasroos/react-native-multi-slider'
 
+const DIGIT_FONT_KEY = 'digitFont'
+const RANDOM_DAILY_KEY = 'randomDaily'
+const DEFAULT_FONT = 'default'
+
+const FONTS = {
+  default: { label: 'Default', style: {} },
+  serif: {
+    label: 'Serif',
+    style: Platform.select({
+      ios: { fontFamily: 'Georgia' },
+      android: { fontFamily: 'serif' },
+      default: { fontFamily: 'Georgia' },
+    }),
+  },
+  mono: {
+    label: 'Mono',
+    style: Platform.select({
+      ios: { fontFamily: 'Menlo' },
+      android: { fontFamily: 'monospace' },
+      default: { fontFamily: 'Menlo' },
+    }),
+  },
+  rounded: {
+    label: 'Rounded',
+    style: Platform.select({
+      ios: { fontFamily: 'Avenir' },
+      android: { fontFamily: 'sans-serif' },
+      default: { fontFamily: 'Avenir' },
+    }),
+  },
+  script: {
+    label: 'Script',
+    style: Platform.select({
+      ios: { fontFamily: 'Snell Roundhand' },
+      android: { fontFamily: 'cursive' },
+      default: { fontFamily: 'Snell Roundhand' },
+    }),
+  },
+}
+
+// Daily mode picks among these only, so "surprise me" never shows the default
+// look. Derived from FONTS so a font can never be in one list but not the other.
+const DAILY_FONT_POOL = Object.keys(FONTS).filter((id) => id !== DEFAULT_FONT)
+
+// Pure helpers (no state): the same local date always derives the same font id.
+const dayOfYear = (now) => now.startOf('day').diff(now.startOf('year'), 'day')
+
+const dailyFontId = (now) =>
+  DAILY_FONT_POOL[dayOfYear(now) % DAILY_FONT_POOL.length]
+
+const normalizeFontId = (id) => (FONTS[id] ? id : DEFAULT_FONT)
+
+const activeFontId = (randomDaily, digitFont, now) =>
+  normalizeFontId(randomDaily === true ? dailyFontId(now) : digitFont)
+
 export default function App() {
   useKeepAwake()
   const { height, width } = useWindowDimensions()
   const fontSize = width / 3
-
-  const fontSpecs = {
-    // fontFamily: 'undefined',
-    // fontStyle: 'italic',
-    fontSize,
-    fontWeight: '600',
-    // width,
-  }
 
   const [firstScreen, setFirstScreen] = useState(true)
 
@@ -58,6 +106,26 @@ export default function App() {
   const CHIMING_TIME_RANGE = 'chimingTimeRange'
   const [chimingTimeRange, setChimingTimeRange] = useState(null)
 
+  // null means "not loaded from SecureStore yet"; renders fall back to default.
+  const [digitFont, setDigitFont] = useState(null)
+  const [randomDaily, setRandomDaily] = useState(null)
+  // Until the prefs load finishes, the font controls are shown but inert, so a
+  // early tap can't be clobbered by (or clobber) the values init is reading.
+  const [fontPrefsLoaded, setFontPrefsLoaded] = useState(false)
+
+  // Recomputed on each render (the clock ticks every second), so a new local
+  // date picks up the new daily font without extra state or timers.
+  const currentFontId = activeFontId(randomDaily, digitFont, currentTime)
+
+  const fontSpecs = {
+    // fontFamily: 'undefined',
+    // fontStyle: 'italic',
+    fontSize,
+    fontWeight: '600',
+    // width,
+    ...FONTS[currentFontId].style,
+  }
+
   const initChimingTime = async () => {
     setChimingTimeRange(
       JSON.parse(await SecureStore.getItemAsync(CHIMING_TIME_RANGE)) || {
@@ -65,6 +133,26 @@ export default function App() {
         max: 24,
       },
     )
+  }
+
+  const initDigitFontPrefs = async () => {
+    // Only successful reads write state. A corrupt or unreadable stored value
+    // leaves prefs null (renders as default) and is never written back over,
+    // so a transient SecureStore failure can't destroy intact prefs.
+    try {
+      const storedFont = JSON.parse(
+        await SecureStore.getItemAsync(DIGIT_FONT_KEY),
+      )
+      setDigitFont(normalizeFontId(storedFont))
+
+      const storedRandomDaily =
+        JSON.parse(await SecureStore.getItemAsync(RANDOM_DAILY_KEY)) === true
+      setRandomDaily(storedRandomDaily)
+    } catch {
+      // treat as unset; save-effect guards skip persisting while null
+    } finally {
+      setFontPrefsLoaded(true)
+    }
   }
 
   const initSounds = () => {
@@ -100,6 +188,7 @@ export default function App() {
     ;(async () => {
       await setAudioModeAsync({ playsInSilentMode: true })
       await initChimingTime()
+      await initDigitFontPrefs()
       initSounds()
     })()
 
@@ -155,6 +244,27 @@ export default function App() {
     }
     // console.log({ chimingTimeRange: JSON.stringify(chimingTimeRange) })
   }, [chimingTimeRange])
+
+  useEffect(() => {
+    if (digitFont) {
+      SecureStore.setItemAsync(DIGIT_FONT_KEY, JSON.stringify(digitFont)).catch(
+        () => {
+          // best-effort persist: keep the choice for this session on failure
+        },
+      )
+    }
+  }, [digitFont])
+
+  useEffect(() => {
+    if (randomDaily !== null) {
+      SecureStore.setItemAsync(
+        RANDOM_DAILY_KEY,
+        JSON.stringify(randomDaily),
+      ).catch(() => {
+        // best-effort persist: keep the choice for this session on failure
+      })
+    }
+  }, [randomDaily])
 
   const play = async (minute) => {
     // console.log({ minute })
@@ -248,6 +358,90 @@ export default function App() {
               })
             }
           />
+        </View>
+
+        <View
+          pointerEvents={fontPrefsLoaded ? 'auto' : 'none'}
+          style={{
+            flexDirection: 'column',
+            width: '90%',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingBottom: 20,
+            opacity: fontPrefsLoaded ? 1 : 0.5,
+          }}
+        >
+          <Text
+            style={{
+              paddingTop: 10,
+              paddingBottom: 10,
+              fontSize: 20,
+              fontWeight: '600',
+            }}
+          >
+            Digit font
+          </Text>
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+            }}
+          >
+            {Object.keys(FONTS).map((id) => (
+              <Pressable
+                key={id}
+                onPress={() => {
+                  setDigitFont(id)
+                  setRandomDaily(false)
+                }}
+                style={{
+                  paddingVertical: 8,
+                  paddingHorizontal: 14,
+                  margin: 4,
+                  borderRadius: 10,
+                  elevation: 5,
+                  borderWidth: 1,
+                  borderColor: 'black',
+                  backgroundColor: id === currentFontId ? 'black' : 'white',
+                }}
+              >
+                <Text
+                  style={{
+                    ...FONTS[id].style,
+                    fontWeight: '600',
+                    fontSize: 16,
+                    color: id === currentFontId ? 'white' : 'black',
+                  }}
+                >
+                  {FONTS[id].label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable
+            onPress={() => setRandomDaily(randomDaily !== true)}
+            style={{
+              marginTop: 12,
+              paddingVertical: 10,
+              paddingHorizontal: 20,
+              borderRadius: 10,
+              elevation: 5,
+              borderWidth: 1,
+              borderColor: 'black',
+              backgroundColor: randomDaily === true ? 'black' : 'white',
+            }}
+          >
+            <Text
+              style={{
+                fontWeight: '600',
+                fontSize: 16,
+                color: randomDaily === true ? 'white' : 'black',
+              }}
+            >
+              {`Surprise me daily: ${randomDaily === true ? 'On' : 'Off'}`}
+            </Text>
+          </Pressable>
         </View>
 
         <Pressable
