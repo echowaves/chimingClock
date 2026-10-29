@@ -77,10 +77,28 @@ const normalizeFontId = (id) => (FONTS[id] ? id : DEFAULT_FONT)
 const activeFontId = (randomDaily, digitFont, now) =>
   normalizeFontId(randomDaily === true ? dailyFontId(now) : digitFont)
 
+// Clock-face layout. The digits wander by roughly DRIFT_RANGE on each axis (the
+// stepper overshoots by two pixels before it reverses), and the fitting box is
+// the window inset by that range plus FIT_PADDING, which absorbs the overshoot.
+// Nothing is drawn outside the box, so the clock stays inside the window at
+// every point of the drift, whatever font is active and however long the string.
+const DRIFT_RANGE = 55
+const FIT_PADDING = 8
+
+// The digits are measured once per font + time string at this small size. Text
+// metrics scale linearly with font size, so one measurement gives exactly the
+// largest size that fits the box. A five-glyph time is ~120px wide here, far
+// inside even a narrow window, so the probe never wraps and can be trusted.
+const MEASURE_SIZE = 40
+
 export default function App() {
   useKeepAwake()
   const { height, width } = useWindowDimensions()
-  const fontSize = width / 3
+  // Ceiling for the digits. The size actually used is the smaller of this and
+  // what the fitting box allows, so a clock that already fits keeps today's look.
+  const maxFontSize = width / 3
+  const fitWidth = Math.max(1, width - 2 * (DRIFT_RANGE + FIT_PADDING))
+  const fitHeight = Math.max(1, height - 2 * (DRIFT_RANGE + FIT_PADDING))
 
   const [firstScreen, setFirstScreen] = useState(true)
 
@@ -89,9 +107,6 @@ export default function App() {
   const [currentMinute, setCurrentMinute] = useState()
 
   const [currentText, setCurrentText] = useState('')
-
-  const [textWidth, setTextWidth] = useState(0)
-  const [textHeight, setTextHeight] = useState(0)
 
   const [xStep, setXStep] = useState(1)
   const [yStep, setYStep] = useState(1)
@@ -120,11 +135,51 @@ export default function App() {
   const fontSpecs = {
     // fontFamily: 'undefined',
     // fontStyle: 'italic',
-    fontSize,
+    fontSize: maxFontSize,
     fontWeight: '600',
     // width,
     ...FONTS[currentFontId].style,
   }
+
+  // The digits' natural box at MEASURE_SIZE, as the probe below reports it; null
+  // until the first measurement arrives. Only the font and the time string affect
+  // it, never the window size: the fitting size is derived from these numbers on
+  // every render, so a resize needs no new measurement — and it could not wait for
+  // one, because identical line metrics are deduplicated before reaching JS.
+  const [digitMetrics, setDigitMetrics] = useState(null)
+  const metricsKey = `${currentFontId}|${currentText}`
+
+  const onMeasureDigits = ({ nativeEvent }) => {
+    const [line] = nativeEvent.lines
+    if (!line || !line.width || !line.height) return
+    if (!Number.isFinite(line.width) || !Number.isFinite(line.height)) return
+    if (digitMetrics && digitMetrics.key === metricsKey) return
+    setDigitMetrics({ key: metricsKey, width: line.width, height: line.height })
+  }
+
+  // Line width and height both scale linearly with font size, so the measurement
+  // gives the largest size whose digits still fit the box along each axis. While a
+  // new font or time string is being measured the previous metrics keep drawing —
+  // closer than flashing back to the ceiling. Before anything is measured, assume
+  // the digits fill the fitting box.
+  const fittedFontSize = digitMetrics
+    ? Math.min(
+        maxFontSize,
+        (fitWidth * MEASURE_SIZE) / digitMetrics.width,
+        (fitHeight * MEASURE_SIZE) / digitMetrics.height,
+      )
+    : maxFontSize
+  const digitFontSize =
+    Number.isFinite(fittedFontSize) && fittedFontSize > 0
+      ? fittedFontSize
+      : maxFontSize
+  const digitScale = digitFontSize / MEASURE_SIZE
+  // Centring uses the measured box, so the clock stays in the middle of the
+  // window on both platforms — textAlignVertical would only do it on Android.
+  const digitWidth = digitMetrics ? digitMetrics.width * digitScale : fitWidth
+  const digitHeight = digitMetrics
+    ? digitMetrics.height * digitScale
+    : fitHeight
 
   const initChimingTime = async () => {
     setChimingTimeRange(
@@ -203,10 +258,11 @@ export default function App() {
   useEffect(() => {
     const minute = dayjs(currentTime).minute()
 
-    if (xShift >= 55) setXStep(-1) // essential, this will shift direction eventually
-    if (xShift < -55) setXStep(1)
-    if (yShift > 55) setYStep(-1)
-    if (yShift < -55) setYStep(1)
+    // essential, this will shift direction eventually
+    if (xShift >= DRIFT_RANGE) setXStep(-1)
+    if (xShift < -DRIFT_RANGE) setXStep(1)
+    if (yShift > DRIFT_RANGE) setYStep(-1)
+    if (yShift < -DRIFT_RANGE) setYStep(1)
 
     setXShift(xShift + xStep)
     setYShift(yShift + yStep)
@@ -303,15 +359,6 @@ export default function App() {
     },
     title: { paddingTop: 30, fontSize: 20 },
   })
-
-  const onLayout = (event) => {
-    // console.log('on')
-
-    if (event.nativeEvent.layout.width !== textWidth)
-      setTextWidth(event.nativeEvent.layout.width)
-    if (event.nativeEvent.layout.height !== textHeight)
-      setTextHeight(event.nativeEvent.layout.height)
-  }
 
   if (firstScreen)
     return (
@@ -478,15 +525,41 @@ export default function App() {
         }}
         onPress={() => setFirstScreen(true)}
       >
+        {/* Hidden probe. It reports the digits' natural width and line height at
+            a known small size, which is what makes the size below exact rather
+            than guessed. Native auto-fit can't do this instead: iOS caps it at
+            96pt and minimumFontScale is ignored on Fabric. The probe is left
+            unconstrained (no width style) so the line box it reports is the
+            glyphs' natural width and not the container's. */}
         <Text
+          numberOfLines={1}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
           style={{
             ...fontSpecs,
+            fontSize: MEASURE_SIZE,
+            opacity: 0,
+            position: 'absolute',
+            left: 0,
+            top: 0,
+          }}
+          onTextLayout={onMeasureDigits}
+        >
+          {currentText}
+        </Text>
+        {/* numberOfLines is the backstop: the measured size already keeps the
+            digits inside the fitting box, so they never wrap. */}
+        <Text
+          numberOfLines={1}
+          style={{
+            ...fontSpecs,
+            fontSize: digitFontSize,
             color: '#d0fcc5',
             position: 'absolute',
-            left: width / 2 - textWidth / 2 + xShift,
-            top: height / 2 - textHeight / 2 + yShift,
+            left: (width - digitWidth) / 2 + xShift,
+            top: (height - digitHeight) / 2 + yShift,
           }}
-          onLayout={onLayout}
         >
           {currentText}
         </Text>
