@@ -13,7 +13,7 @@ import 'react-native-gesture-handler'
 import { useKeepAwake } from 'expo-keep-awake'
 import { StatusBar } from 'expo-status-bar'
 
-import { Audio } from 'expo-av'
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio'
 
 import dayjs from 'dayjs'
 
@@ -67,53 +67,40 @@ export default function App() {
     )
   }
 
-  const initSounds = async () => {
+  const initSounds = () => {
     const hours = new Map()
-    hours.set(0, await Audio.Sound.createAsync(require('./assets/hour0.mp3')))
-    hours.set(1, await Audio.Sound.createAsync(require('./assets/hour1.mp3')))
-    hours.set(2, await Audio.Sound.createAsync(require('./assets/hour2.mp3')))
-    hours.set(3, await Audio.Sound.createAsync(require('./assets/hour3.mp3')))
-    hours.set(4, await Audio.Sound.createAsync(require('./assets/hour4.mp3')))
-    hours.set(5, await Audio.Sound.createAsync(require('./assets/hour5.mp3')))
-    hours.set(6, await Audio.Sound.createAsync(require('./assets/hour6.mp3')))
-    hours.set(7, await Audio.Sound.createAsync(require('./assets/hour7.mp3')))
-    hours.set(8, await Audio.Sound.createAsync(require('./assets/hour8.mp3')))
-    hours.set(9, await Audio.Sound.createAsync(require('./assets/hour9.mp3')))
-    hours.set(10, await Audio.Sound.createAsync(require('./assets/hour10.mp3')))
-    hours.set(11, await Audio.Sound.createAsync(require('./assets/hour11.mp3')))
+    hours.set(0, createAudioPlayer(require('./assets/hour0.mp3')))
+    hours.set(1, createAudioPlayer(require('./assets/hour1.mp3')))
+    hours.set(2, createAudioPlayer(require('./assets/hour2.mp3')))
+    hours.set(3, createAudioPlayer(require('./assets/hour3.mp3')))
+    hours.set(4, createAudioPlayer(require('./assets/hour4.mp3')))
+    hours.set(5, createAudioPlayer(require('./assets/hour5.mp3')))
+    hours.set(6, createAudioPlayer(require('./assets/hour6.mp3')))
+    hours.set(7, createAudioPlayer(require('./assets/hour7.mp3')))
+    hours.set(8, createAudioPlayer(require('./assets/hour8.mp3')))
+    hours.set(9, createAudioPlayer(require('./assets/hour9.mp3')))
+    hours.set(10, createAudioPlayer(require('./assets/hour10.mp3')))
+    hours.set(11, createAudioPlayer(require('./assets/hour11.mp3')))
 
     const minutes = new Map()
-    minutes.set(
-      15,
-      await Audio.Sound.createAsync(require('./assets/minute15.mp3')),
-    )
-    minutes.set(
-      30,
-      await Audio.Sound.createAsync(require('./assets/minute30.mp3')),
-    )
-    minutes.set(
-      45,
-      await Audio.Sound.createAsync(require('./assets/minute45.mp3')),
-    )
+    minutes.set(15, createAudioPlayer(require('./assets/minute15.mp3')))
+    minutes.set(30, createAudioPlayer(require('./assets/minute30.mp3')))
+    minutes.set(45, createAudioPlayer(require('./assets/minute45.mp3')))
 
     setHoursSounds(hours)
     setMinutesSounds(minutes)
 
-    const { sound } = await Audio.Sound.createAsync(
-      require('./assets/ticktack.mp3'),
-    )
-    setTickSound(sound)
-    //  await sound.setIsLooping(true)
-    await sound.playAsync()
-    await sound.setIsLoopingAsync(true)
-    // await sound.unloadAsync()
+    const tick = createAudioPlayer(require('./assets/ticktack.mp3'))
+    setTickSound(tick)
+    tick.loop = true
+    tick.play()
   }
 
   useEffect(() => {
     ;(async () => {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true })
+      await setAudioModeAsync({ playsInSilentMode: true })
       await initChimingTime()
-      await initSounds()
+      initSounds()
     })()
 
     const interval = setInterval(() => {
@@ -154,8 +141,8 @@ export default function App() {
     return false
   }
 
-  const resetTicking = async () => {
-    await tickSound?.setVolumeAsync(isSoundEnabled() ? 1 : 0)
+  const resetTicking = () => {
+    if (tickSound) tickSound.volume = isSoundEnabled() ? 1 : 0
   }
 
   useEffect(() => {
@@ -171,15 +158,14 @@ export default function App() {
 
   const play = async (minute) => {
     // console.log({ minute })
-    const { sound } =
+    const player =
       minute === 0
         ? hoursSounds.get(dayjs(currentTime).hour() % 12)
         : minutesSounds.get(minute)
 
-    await sound.setPositionAsync(0)
-    await sound.setVolumeAsync(isSoundEnabled() ? 1 : 0)
-    await sound.playAsync()
-    // await sound.unloadAsync()
+    player.seekTo(0)
+    player.volume = isSoundEnabled() ? 1 : 0
+    player.play()
   }
 
   useEffect(() => {
