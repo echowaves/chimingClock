@@ -4,6 +4,7 @@ import {
   Platform,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -358,158 +359,175 @@ export default function App() {
       // paddingVertical: 36,
     },
     title: { paddingTop: 30, fontSize: 20 },
+    // flexGrow keeps the content centred exactly as before when it fits the
+    // screen; when it doesn't (small phones) the container grows to the
+    // content and the ScrollView takes over, with no clipped top.
+    // width keeps the ScrollView full-width despite the parent's
+    // alignItems: 'center', which would otherwise shrink-wrap it to content.
+    settingsScroll: { flex: 1, width: '100%' },
+    settingsContent: {
+      flexGrow: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingBottom: 24,
+    },
   })
 
   if (firstScreen)
     return (
       <SafeAreaView style={styles.firstScreen}>
-        <Text style={styles.title}>
-          chimingClock will play chimes every 15 minutes. Sometimes it may get
-          too loud for you. The clock will chime only during the time range
-          specified below:
-        </Text>
-
-        <View
-          style={{
-            flexDirection: 'column',
-            width: '90%', // Change width to '100%'
-            // paddingVertical: 20,
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingBottom: 30,
-          }}
+        <ScrollView
+          style={styles.settingsScroll}
+          contentContainerStyle={styles.settingsContent}
         >
-          <Text
-            style={{
-              paddingTop: 10,
-              paddingBottom: 10,
-              fontSize: 20,
-              fontWeight: '600',
-            }}
-          >{`chimes active from ${dayjs(
-            `2020-01-01 ${chimingTimeRange?.min}:00`,
-          ).format('ha')} to ${dayjs(
-            `2020-01-01 ${chimingTimeRange?.max}:00`,
-          ).format('ha')}`}</Text>
-          <MultiSlider
-            isMarkersSeparated={true}
-            min={0}
-            max={24}
-            showSteps={true}
-            values={[chimingTimeRange?.min, chimingTimeRange?.max]}
-            onValuesChange={(value) =>
-              setChimingTimeRange({
-                ...chimingTimeRange,
-                min: value[0],
-                max: value[1],
-              })
-            }
-          />
-        </View>
-
-        <View
-          pointerEvents={fontPrefsLoaded ? 'auto' : 'none'}
-          style={{
-            flexDirection: 'column',
-            width: '90%',
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingBottom: 20,
-            opacity: fontPrefsLoaded ? 1 : 0.5,
-          }}
-        >
-          <Text
-            style={{
-              paddingTop: 10,
-              paddingBottom: 10,
-              fontSize: 20,
-              fontWeight: '600',
-            }}
-          >
-            Digit font
+          <Text style={styles.title}>
+            chimingClock will play chimes every 15 minutes. Sometimes it may get
+            too loud for you. The clock will chime only during the time range
+            specified below:
           </Text>
+
           <View
             style={{
-              flexDirection: 'row',
-              flexWrap: 'wrap',
+              flexDirection: 'column',
+              width: '90%', // Change width to '100%'
+              // paddingVertical: 20,
+              alignItems: 'center',
               justifyContent: 'center',
-            }}
-          >
-            {Object.keys(FONTS).map((id) => (
-              <Pressable
-                key={id}
-                onPress={() => {
-                  setDigitFont(id)
-                  setRandomDaily(false)
-                }}
-                style={{
-                  paddingVertical: 8,
-                  paddingHorizontal: 14,
-                  margin: 4,
-                  borderRadius: 10,
-                  elevation: 5,
-                  borderWidth: 1,
-                  borderColor: 'black',
-                  backgroundColor: id === currentFontId ? 'black' : 'white',
-                }}
-              >
-                <Text
-                  style={{
-                    ...FONTS[id].style,
-                    fontWeight: '600',
-                    fontSize: 16,
-                    color: id === currentFontId ? 'white' : 'black',
-                  }}
-                >
-                  {FONTS[id].label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Pressable
-            onPress={() => setRandomDaily(randomDaily !== true)}
-            style={{
-              marginTop: 12,
-              paddingVertical: 10,
-              paddingHorizontal: 20,
-              borderRadius: 10,
-              elevation: 5,
-              borderWidth: 1,
-              borderColor: 'black',
-              backgroundColor: randomDaily === true ? 'black' : 'white',
+              paddingBottom: 30,
             }}
           >
             <Text
               style={{
+                paddingTop: 10,
+                paddingBottom: 10,
+                fontSize: 20,
                 fontWeight: '600',
-                fontSize: 16,
-                color: randomDaily === true ? 'white' : 'black',
+              }}
+            >{`chimes active from ${dayjs(
+              `2020-01-01 ${chimingTimeRange?.min}:00`,
+            ).format('ha')} to ${dayjs(
+              `2020-01-01 ${chimingTimeRange?.max}:00`,
+            ).format('ha')}`}</Text>
+            <MultiSlider
+              isMarkersSeparated={true}
+              min={0}
+              max={24}
+              showSteps={true}
+              values={[chimingTimeRange?.min, chimingTimeRange?.max]}
+              onValuesChange={(value) =>
+                setChimingTimeRange({
+                  ...chimingTimeRange,
+                  min: value[0],
+                  max: value[1],
+                })
+              }
+            />
+          </View>
+
+          <View
+            pointerEvents={fontPrefsLoaded ? 'auto' : 'none'}
+            style={{
+              flexDirection: 'column',
+              width: '90%',
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingBottom: 20,
+              opacity: fontPrefsLoaded ? 1 : 0.5,
+            }}
+          >
+            <Text
+              style={{
+                paddingTop: 10,
+                paddingBottom: 10,
+                fontSize: 20,
+                fontWeight: '600',
               }}
             >
-              {`Surprise me daily: ${randomDaily === true ? 'On' : 'Off'}`}
+              Digit font
+            </Text>
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+              }}
+            >
+              {Object.keys(FONTS).map((id) => (
+                <Pressable
+                  key={id}
+                  onPress={() => {
+                    setDigitFont(id)
+                    setRandomDaily(false)
+                  }}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 14,
+                    margin: 4,
+                    borderRadius: 10,
+                    elevation: 5,
+                    borderWidth: 1,
+                    borderColor: 'black',
+                    backgroundColor: id === currentFontId ? 'black' : 'white',
+                  }}
+                >
+                  <Text
+                    style={{
+                      ...FONTS[id].style,
+                      fontWeight: '600',
+                      fontSize: 16,
+                      color: id === currentFontId ? 'white' : 'black',
+                    }}
+                  >
+                    {FONTS[id].label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable
+              onPress={() => setRandomDaily(randomDaily !== true)}
+              style={{
+                marginTop: 12,
+                paddingVertical: 10,
+                paddingHorizontal: 20,
+                borderRadius: 10,
+                elevation: 5,
+                borderWidth: 1,
+                borderColor: 'black',
+                backgroundColor: randomDaily === true ? 'black' : 'white',
+              }}
+            >
+              <Text
+                style={{
+                  fontWeight: '600',
+                  fontSize: 16,
+                  color: randomDaily === true ? 'white' : 'black',
+                }}
+              >
+                {`Surprise me daily: ${randomDaily === true ? 'On' : 'Off'}`}
+              </Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={() => setFirstScreen(false)}
+            style={{
+              alignSelf: 'center',
+              // width: '90%', // Change width to '100%'
+
+              alignItems: 'center',
+              // justifyContent: 'center',
+              paddingVertical: 20,
+              paddingHorizontal: 32,
+              borderRadius: 10,
+              elevation: 5,
+              backgroundColor: 'black',
+            }}
+          >
+            <Text style={{ fontWeight: '600', fontSize: 20, color: 'white' }}>
+              {`Show the clock`}
             </Text>
           </Pressable>
-        </View>
-
-        <Pressable
-          onPress={() => setFirstScreen(false)}
-          style={{
-            alignSelf: 'center',
-            // width: '90%', // Change width to '100%'
-
-            alignItems: 'center',
-            // justifyContent: 'center',
-            paddingVertical: 20,
-            paddingHorizontal: 32,
-            borderRadius: 10,
-            elevation: 5,
-            backgroundColor: 'black',
-          }}
-        >
-          <Text style={{ fontWeight: '600', fontSize: 20, color: 'white' }}>
-            {`Show the clock`}
-          </Text>
-        </Pressable>
+        </ScrollView>
       </SafeAreaView>
     )
   // console.log({ width })
