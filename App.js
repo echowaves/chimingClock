@@ -5,7 +5,6 @@ import {
   Platform,
   Pressable,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -545,7 +544,12 @@ export default function App() {
   if (firstScreen)
     return (
       <SafeAreaView style={styles.firstScreen}>
-        <ScrollView
+        {/* Animated.ScrollView, not ScrollView: with useNativeDriver an
+            Animated.event is an object rather than a callable handler, and only
+            an animated component knows how to attach it (it hands the inner view
+            a real function). Passing it to a plain ScrollView crashes on the
+            first scroll with "Object is not a function". */}
+        <Animated.ScrollView
           style={styles.settingsScroll}
           contentContainerStyle={styles.settingsContent}
           showsVerticalScrollIndicator={false}
@@ -701,7 +705,7 @@ export default function App() {
               {`Show the clock`}
             </Text>
           </Pressable>
-        </ScrollView>
+        </Animated.ScrollView>
         {/* Always-visible scrollbar. pointerEvents="none" keeps it clear of the
             slider and buttons, so it can never capture a drag. */}
         <View pointerEvents="none" style={styles.settingsScrollbarTrack}>

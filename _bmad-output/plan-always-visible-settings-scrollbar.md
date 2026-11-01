@@ -53,6 +53,7 @@ Decisions during implementation/review:
 
 - `quick` lens (read-only review subagent): no findings — hook order stable across both screen branches, geometry finite for every unmeasured/edge size (`inputRange` always strictly increasing, thumb clamped to at most the track height), overlay excluded from hit-testing by `pointerEvents="none"`, absolute positioning leaves the centred layout and the clock screen untouched.
 - Rejected during implementation (not a review finding): driving the thumb from scroll state instead of `Animated.event` was ruled out before coding — a `setState` per frame would re-render every settings control 60 times a second.
+- **Superseded on device:** this plan attached `Animated.event` to a plain `ScrollView`, which crashes on the first scroll in RN 0.88 because the native-driver event is an object, not a handler. See `_bmad-output/plan-settings-scrollbar-scroll-crash.md`; the drawn scrollbar itself is unchanged.
 
 ## Verification
 
