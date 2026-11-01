@@ -1,5 +1,5 @@
 /* eslint-disable global-require */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Platform,
   Pressable,
@@ -92,6 +92,19 @@ const FIT_PADDING = 8
 // inside even a narrow window, so the probe never wraps and can be trusted.
 const MEASURE_SIZE = 40
 
+// Chime bookkeeping. RN pauses JS timers the moment the app stops being active —
+// RCTTiming listens for UIApplicationWillResignActive, not only for entering the
+// background, and treats a close proximity sensor as background too — so a gap in
+// ticking can straddle a quarter hour entirely. Keying the chime on the observed
+// minute therefore loses that quarter for good; keying it on wall-clock quarters
+// means the first tick after any gap still reports the quarter it crossed.
+const QUARTER_MS = 15 * 60 * 1000
+// A boundary further back than this was passed while nothing was ticking, and
+// announcing it would name a time that has already gone by — stay silent instead.
+// Counting quarters from epoch milliseconds is safe in every zone, since all UTC
+// offsets are multiples of 15 minutes, so these boundaries are local :00/:15/:30/:45.
+const LATE_CHIME_GRACE_MS = 2 * 60 * 1000
+
 export default function App() {
   useKeepAwake()
   const { height, width } = useWindowDimensions()
@@ -118,6 +131,11 @@ export default function App() {
   const [hoursSounds, setHoursSounds] = useState()
   const [minutesSounds, setMinutesSounds] = useState()
   const [tickSound, setTickSound] = useState()
+
+  // Which quarter hour was last chimed, as an index into QUARTER_MS; null until the
+  // first tick records the current one, so launching mid-quarter stays silent. A
+  // ref, not state: it must never re-render or batch with the clock itself.
+  const lastChimedQuarter = useRef(null)
 
   const CHIMING_TIME_RANGE = 'chimingTimeRange'
   const [chimingTimeRange, setChimingTimeRange] = useState(null)
@@ -323,29 +341,42 @@ export default function App() {
     }
   }, [randomDaily])
 
-  const play = async (minute) => {
-    // console.log({ minute })
+  // The hour and minute are the quarter's own, so a chime that lands late still
+  // sounds the bell for the hour it is announcing.
+  const play = async (hour, minute) => {
     const player =
-      minute === 0
-        ? hoursSounds.get(dayjs(currentTime).hour() % 12)
-        : minutesSounds.get(minute)
+      minute === 0 ? hoursSounds.get(hour % 12) : minutesSounds.get(minute)
+    if (!player) return
 
     player.seekTo(0)
     player.volume = isSoundEnabled() ? 1 : 0
     player.play()
   }
 
+  // One chime per quarter hour, whatever the ticks looked like in between. Runs on
+  // every tick so a delayed or skipped tick cannot hide a boundary; at most one
+  // chime follows a long gap (the newest quarter), never a burst of missed ones.
+  useEffect(() => {
+    const nowMs = dayjs(currentTime).valueOf()
+    const quarter = Math.floor(nowMs / QUARTER_MS)
+
+    if (lastChimedQuarter.current === null) {
+      lastChimedQuarter.current = quarter
+      return
+    }
+    if (quarter === lastChimedQuarter.current) return
+    lastChimedQuarter.current = quarter
+
+    const boundaryMs = quarter * QUARTER_MS
+    if (!minutesSounds || nowMs - boundaryMs > LATE_CHIME_GRACE_MS) return
+
+    const boundary = dayjs(boundaryMs)
+    play(boundary.hour(), boundary.minute())
+  }, [currentTime])
+
+  // The tick volume follows the active time range as hours pass by it.
   useEffect(() => {
     resetTicking()
-    if (
-      (currentMinute === 0 ||
-        currentMinute === 15 ||
-        currentMinute === 30 ||
-        currentMinute === 45) &&
-      minutesSounds
-    ) {
-      play(currentMinute)
-    }
   }, [currentMinute])
 
   const styles = StyleSheet.create({
