@@ -126,19 +126,32 @@ const FONTS = {
 }
 
 // Daily mode picks among these only, so "surprise me" never shows the default
-// look. Derived from FONTS so a font can never be in one list but not the other.
+// look. Derived from FONTS so a font can never be in one list but not the other;
+// narrowed to the fonts this device has where that is known.
 const DAILY_FONT_POOL = Object.keys(FONTS).filter((id) => id !== DEFAULT_FONT)
 
 // Pure helpers (no state): the same local date always derives the same font id.
 const dayOfYear = (now) => now.startOf('day').diff(now.startOf('year'), 'day')
 
-const dailyFontId = (now) =>
-  DAILY_FONT_POOL[dayOfYear(now) % DAILY_FONT_POOL.length]
+const dailyFontId = (now, pool) =>
+  pool.length === 0 ? DEFAULT_FONT : pool[dayOfYear(now) % pool.length]
 
 const normalizeFontId = (id) => (FONTS[id] ? id : DEFAULT_FONT)
 
-const activeFontId = (randomDaily, digitFont, now) =>
-  normalizeFontId(randomDaily === true ? dailyFontId(now) : digitFont)
+// `availableFontIds` is the ids measured on this device, or null while that is
+// still unknown. A face the device lacks would only ever draw the system font, so
+// daily mode skips it and a stored choice of it falls back to Default — which is
+// what the digits are already showing, and keeps the highlighted button honest.
+const activeFontId = (randomDaily, digitFont, now, availableFontIds) => {
+  const pool = availableFontIds
+    ? availableFontIds.filter((id) => id !== DEFAULT_FONT)
+    : DAILY_FONT_POOL
+  const wanted =
+    randomDaily === true ? dailyFontId(now, pool) : normalizeFontId(digitFont)
+  if (availableFontIds && !availableFontIds.includes(wanted))
+    return DEFAULT_FONT
+  return normalizeFontId(wanted)
+}
 
 // Clock-face layout. The digits wander by roughly DRIFT_RANGE on each axis (the
 // stepper overshoots by two pixels before it reverses), and the fitting box is
@@ -177,6 +190,78 @@ const SCROLLBAR_WIDTH = 4
 const SCROLLBAR_INSET = 8
 // A thumb shorter than this is hard to see or read as a thumb, however long the list.
 const SCROLLBAR_MIN_THUMB = 24
+
+// Which digit fonts this device really has. A family it lacks is not an error:
+// RCTFontUtils.mm answers with the system font, so a button can promise Engraved
+// and draw San Francisco. So ask the device — lay each candidate out at
+// MEASURE_SIZE beside a twin asking for the same weight with no family, and treat
+// identical metrics as "that family is not here". Digits plus upper and lowercase
+// letters, because some of these faces (Copperplate) differ mostly outside digits.
+const FONT_PROBE_TEXT = '0123456789Agg'
+// Reported line boxes vary by fractions of a point; smaller differences than this
+// are rounding rather than a different face.
+const FONT_METRIC_EPSILON = 0.01
+const FONT_METRIC_FIELDS = [
+  'width',
+  'height',
+  'ascender',
+  'capHeight',
+  'descender',
+  'xHeight',
+]
+
+// True when the two probes are measurably different faces. Fields a platform does
+// not report (or reports as nothing) are skipped rather than counted as a match, so
+// the comparison still works wherever fewer metrics are available.
+const fontMetricsDiffer = (a, b) =>
+  !!a &&
+  !!b &&
+  FONT_METRIC_FIELDS.some(
+    (field) =>
+      Number.isFinite(a[field]) &&
+      Number.isFinite(b[field]) &&
+      Math.abs(a[field] - b[field]) > FONT_METRIC_EPSILON,
+  )
+
+const fontProbeKey = (id) => id
+const systemProbeKey = (weight) => `system:${weight}`
+
+// One invisible line of text that reports its own metrics. Same trick the clock
+// uses to fit its digits: an absolutely positioned, fully transparent Text still
+// lays out, and onTextLayout carries the answer.
+function FontProbe({ probeKey, spec, onMeasured }) {
+  const report = ({ nativeEvent }) => {
+    const [line] = nativeEvent.lines
+    if (
+      !line ||
+      !Number.isFinite(line.width) ||
+      !Number.isFinite(line.height)
+    ) {
+      return
+    }
+    onMeasured(probeKey, line)
+  }
+
+  return (
+    <Text
+      numberOfLines={1}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={{
+        ...spec,
+        fontSize: MEASURE_SIZE,
+        opacity: 0,
+        position: 'absolute',
+        left: 0,
+        top: 0,
+      }}
+      onTextLayout={report}
+    >
+      {FONT_PROBE_TEXT}
+    </Text>
+  )
+}
 
 export default function App() {
   useKeepAwake()
@@ -220,9 +305,71 @@ export default function App() {
   // early tap can't be clobbered by (or clobber) the values init is reading.
   const [fontPrefsLoaded, setFontPrefsLoaded] = useState(false)
 
+  // What this device can actually draw, measured by hidden probes on the settings
+  // screen. null while any probe is still outstanding: nothing is ruled out until
+  // then, so the picker cannot start empty or lose a button while it is open.
+  const [fontProbeMetrics, setFontProbeMetrics] = useState({})
+
+  const recordFontProbe = (probeKey, line) =>
+    setFontProbeMetrics((measured) => {
+      // Layout can report the same line more than once; storing identical numbers
+      // again would re-render, and a re-render can re-layout — stop the first time.
+      const previous = measured[probeKey]
+      if (previous && !fontMetricsDiffer(previous, line)) return measured
+      return { ...measured, [probeKey]: line }
+    })
+
+  // One probe per font that asks for a family, plus one twin per weight those
+  // candidates ask for: a missing family is answered by the system font *at the
+  // requested weight*, so that is the only fair thing to measure it against.
+  const fontProbes = useMemo(() => {
+    const candidates = Object.keys(FONTS).filter((id) => id !== DEFAULT_FONT)
+    const weights = [...new Set(candidates.map((id) => FONTS[id].weight))]
+    return [
+      ...candidates.map((id) => ({
+        probeKey: fontProbeKey(id),
+        spec: { fontWeight: FONTS[id].weight, ...FONTS[id].style },
+      })),
+      ...weights.map((weight) => ({
+        probeKey: systemProbeKey(weight),
+        spec: { fontWeight: weight },
+      })),
+    ]
+  }, [])
+
+  const availableFontIds = useMemo(() => {
+    const candidates = Object.keys(FONTS).filter((id) => id !== DEFAULT_FONT)
+    const outstanding = candidates.some(
+      (id) =>
+        !fontProbeMetrics[fontProbeKey(id)] ||
+        !fontProbeMetrics[systemProbeKey(FONTS[id].weight)],
+    )
+    if (outstanding) return null
+    return [
+      // The default asks for no family, so it is the system font by definition and
+      // always available.
+      DEFAULT_FONT,
+      ...candidates.filter((id) =>
+        fontMetricsDiffer(
+          fontProbeMetrics[fontProbeKey(id)],
+          fontProbeMetrics[systemProbeKey(FONTS[id].weight)],
+        ),
+      ),
+    ]
+  }, [fontProbeMetrics])
+
+  const offeredFontIds = availableFontIds
+    ? Object.keys(FONTS).filter((id) => availableFontIds.includes(id))
+    : Object.keys(FONTS)
+
   // Recomputed on each render (the clock ticks every second), so a new local
   // date picks up the new daily font without extra state or timers.
-  const currentFontId = activeFontId(randomDaily, digitFont, currentTime)
+  const currentFontId = activeFontId(
+    randomDaily,
+    digitFont,
+    currentTime,
+    availableFontIds,
+  )
 
   const fontSpecs = {
     fontSize: maxFontSize,
@@ -653,7 +800,7 @@ export default function App() {
                 justifyContent: 'center',
               }}
             >
-              {Object.keys(FONTS).map((id) => (
+              {offeredFontIds.map((id) => (
                 <Pressable
                   key={id}
                   onPress={() => {
@@ -722,6 +869,18 @@ export default function App() {
             ]}
           />
         </View>
+        {/* Availability probes, outside the ScrollView so they cannot change its
+            content height (and with it the thumb geometry above). Each one is a
+            transparent absolutely positioned line of text that reports what the
+            device really rendered for that family; see FontProbe. */}
+        {fontProbes.map(({ probeKey, spec }) => (
+          <FontProbe
+            key={probeKey}
+            probeKey={probeKey}
+            spec={spec}
+            onMeasured={recordFontProbe}
+          />
+        ))}
       </SafeAreaView>
     )
   // console.log({ width })
