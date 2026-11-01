@@ -3,7 +3,7 @@
     "name": "chimingclock",
     "slug": "chimingclock",
     "owner": "echowaves",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "orientation": "landscape",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,7 +19,7 @@
       "supportsTablet": true,
       "requireFullScreen": true,
       "bundleIdentifier": "com.echowaves.chimingclock",
-      "buildNumber": "23"
+      "buildNumber": "24"
     },
     "android": {
       "adaptiveIcon": {
@@ -27,7 +27,7 @@
         "backgroundColor": "#080E1D"
       },
       "package": "com.echowaves.chimingclock",
-      "versionCode": 23
+      "versionCode": 24
     },
     "web": {
       "favicon": "./assets/favicon.png"
