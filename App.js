@@ -223,6 +223,26 @@ const fontMetricsDiffer = (a, b) =>
       Math.abs(a[field] - b[field]) > FONT_METRIC_EPSILON,
   )
 
+// Some entries name the platform's own default typeface rather than a face that
+// might be absent: Android's 'sans-serif' resolves on every device, which is why
+// Rounded is worth offering there even though it asks for no more than the system
+// family at a heavier weight. Measuring one against a no-family twin finds identical
+// metrics — true, but it proves "same family as the default", not "unavailable". So
+// such an entry is declared available where that holds, and measured everywhere else
+// (Rounded asks for Avenir on iOS, which is very much worth measuring).
+const DEFAULT_FAMILY_FONT_IDS = { android: ['rounded'] }
+const isDefaultFamilyFont = (id) =>
+  (DEFAULT_FAMILY_FONT_IDS[Platform.OS] || []).includes(id)
+
+// Measured ids and declared ones, computed once: the platform never changes mid-run.
+const ALL_NON_DEFAULT_FONT_IDS = Object.keys(FONTS).filter(
+  (id) => id !== DEFAULT_FONT,
+)
+const MEASURED_FONT_IDS = ALL_NON_DEFAULT_FONT_IDS.filter(
+  (id) => !isDefaultFamilyFont(id),
+)
+const DECLARED_FONT_IDS = ALL_NON_DEFAULT_FONT_IDS.filter(isDefaultFamilyFont)
+
 const fontProbeKey = (id) => id
 const systemProbeKey = (weight) => `system:${weight}`
 
@@ -232,11 +252,13 @@ const systemProbeKey = (weight) => `system:${weight}`
 function FontProbe({ probeKey, spec, onMeasured }) {
   const report = ({ nativeEvent }) => {
     const [line] = nativeEvent.lines
-    if (
-      !line ||
-      !Number.isFinite(line.width) ||
-      !Number.isFinite(line.height)
-    ) {
+    // A zero-sized line is a layout pass with nothing drawn yet, not a measurement.
+    // Two of those would compare as "the same face" and quietly hide a good font, so
+    // wait for a real report — the digit probe in the clock screen guards the same way.
+    if (!line || !(line.width > 0) || !(line.height > 0)) {
+      return
+    }
+    if (!Number.isFinite(line.width) || !Number.isFinite(line.height)) {
       return
     }
     onMeasured(probeKey, line)
@@ -323,7 +345,7 @@ export default function App() {
   // candidates ask for: a missing family is answered by the system font *at the
   // requested weight*, so that is the only fair thing to measure it against.
   const fontProbes = useMemo(() => {
-    const candidates = Object.keys(FONTS).filter((id) => id !== DEFAULT_FONT)
+    const candidates = MEASURED_FONT_IDS
     const weights = [...new Set(candidates.map((id) => FONTS[id].weight))]
     return [
       ...candidates.map((id) => ({
@@ -338,8 +360,7 @@ export default function App() {
   }, [])
 
   const availableFontIds = useMemo(() => {
-    const candidates = Object.keys(FONTS).filter((id) => id !== DEFAULT_FONT)
-    const outstanding = candidates.some(
+    const outstanding = MEASURED_FONT_IDS.some(
       (id) =>
         !fontProbeMetrics[fontProbeKey(id)] ||
         !fontProbeMetrics[systemProbeKey(FONTS[id].weight)],
@@ -349,7 +370,8 @@ export default function App() {
       // The default asks for no family, so it is the system font by definition and
       // always available.
       DEFAULT_FONT,
-      ...candidates.filter((id) =>
+      ...DECLARED_FONT_IDS,
+      ...MEASURED_FONT_IDS.filter((id) =>
         fontMetricsDiffer(
           fontProbeMetrics[fontProbeKey(id)],
           fontProbeMetrics[systemProbeKey(FONTS[id].weight)],

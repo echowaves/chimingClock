@@ -3,14 +3,14 @@ title: 'Offer only the digit fonts a device actually has'
 type: 'feature'
 ticket: ''
 created: '2026-11-01'
-status: 'in-progress'
+status: 'built'
 baseline_revision: 'ee33b84'
 route: 'oneshot'
 route_source: 'auto'
 risk: 'low'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -48,3 +48,20 @@ Change shape:
 - Candidate probes for every font with a family, plus one system twin per distinct requested weight; results collected into one `{ [key]: metrics }` state map.
 - `availableFontIds` memo: the ids whose candidate differs from its twin, plus `default`; `null` while anything is still unmeasured.
 - Picker, daily pool and active-font resolution all read the availability set.
+
+Ran as planned, with two additions from review. `FontProbe` (module level) + the probe/metric helpers, `fontProbeMetrics` state with an identity-preserving recorder, `fontProbes` and `availableFontIds` memos, `offeredFontIds` for the picker, availability threaded into `activeFontId`, and the probe layer rendered beside the scrollbar overlay outside the ScrollView. Verification passed: eslint exit 0, prettier clean, `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` produced a Hermes bundle. The pure parts (`fontMetricsDiffer`, `activeFontId`, `dailyFontId`, and the availability composition including the declared-font rule) were additionally exercised in a throwaway node harness — 18 assertions over unknown/partial/settled availability, unavailable stored and daily choices, epsilon behaviour, platforms omitting vertical metrics, and picker ordering; all passed and the harness was deleted.
+
+Two notes for whoever reads this next:
+- The daily pool is per-device once measured, so the same date can derive different faces on different devices — inherent to honouring availability. Before the probes settle the pool is the full list, so a daily pick can change once, very early; the settings screen is what the user is looking at while that happens.
+- `activeFontId` returning `default` for an unavailable stored choice changes nothing visible: that was already how the device drew it.
+
+## Review Triage Log
+
+- `quick` lens (read-only review subagent), finding 1 — **real, high, patched**: on Android, Rounded asks for `sans-serif`, which *is* the platform's default family, so its candidate probe and its no-family twin resolve identically and the metric test would have hidden a font that is trivially present on every Android device. Confirmed against `ReactAndroid/.../TextAttributeProps.kt`, where `sans-serif` is documented as the default family. Fixed by `DEFAULT_FAMILY_FONT_IDS`: an entry whose family name *is* the platform default for that platform is declared available and not measured; iOS still measures Rounded, because there it asks for Avenir. The reviewer's other suggested variant — also compare against a probe at Default's weight — was rejected: a weight difference alone makes a genuinely missing family look distinct, which would hide nothing and un-detect everything.
+- `quick` lens, finding 2 — **real, medium, patched**: `FontProbe.report` accepted zero-sized line reports from an empty layout pass; two of those compare as "the same face" and could have collapsed the picker to Default only. Fixed by rejecting non-positive width/height, matching the guard the clock's own digit probe has used all along.
+- `quick` lens, verified clean (no action): no render loop — the recorder returns the identical state object when metrics match within epsilon; `availableFontIds` cannot settle early because every measured id requires its own twin at its own weight string, and an unreported twin keeps availability null (fail open); hooks all sit above both screen branches; the probes live outside the ScrollView and are absolutely positioned with `pointerEvents="none"`, so thumb geometry and hit-testing are untouched; the highlighted button always names the font being drawn.
+
+## Verification (added by review)
+
+- Standalone node harness over the pure functions: 18 assertions, all passing (then deleted).
+- Re-run after the patches: `npx eslint App.js` exit 0, `npx prettier --check App.js` clean, iOS Hermes bundle exported.
