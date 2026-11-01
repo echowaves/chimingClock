@@ -28,10 +28,18 @@ const DIGIT_FONT_KEY = 'digitFont'
 const RANDOM_DAILY_KEY = 'randomDaily'
 const DEFAULT_FONT = 'default'
 
+// Each digit font carries the weight it wants. iOS answers a `fontFamily` request
+// with the face in that family whose weight is closest to the one asked for
+// (RCTFontUtils.mm), so asking a family for a weight it does not have gets the next
+// lightest face instead: Avenir's faces are Book/Medium/DemiBold/Heavy/Black and
+// Snell Roundhand's are Regular/Bold/Black, which is why one shared semibold made
+// both of them look thin. Families without an iOS face fall back to the Android
+// family named beside them.
 const FONTS = {
-  default: { label: 'Default', style: {} },
+  default: { label: 'Default', weight: '600', style: {} },
   serif: {
     label: 'Serif',
+    weight: '600',
     style: Platform.select({
       ios: { fontFamily: 'Georgia' },
       android: { fontFamily: 'serif' },
@@ -40,6 +48,7 @@ const FONTS = {
   },
   mono: {
     label: 'Mono',
+    weight: '600',
     style: Platform.select({
       ios: { fontFamily: 'Menlo' },
       android: { fontFamily: 'monospace' },
@@ -48,6 +57,9 @@ const FONTS = {
   },
   rounded: {
     label: 'Rounded',
+    // 800 resolves to Avenir-Heavy on iOS and a heavy Roboto on Android; the Black
+    // faces are a step too display-like for digits read at a distance.
+    weight: '800',
     style: Platform.select({
       ios: { fontFamily: 'Avenir' },
       android: { fontFamily: 'sans-serif' },
@@ -56,10 +68,60 @@ const FONTS = {
   },
   script: {
     label: 'Script',
+    // Asked exactly, so the closest-face search picks Snell Roundhand Bold by name
+    // weight instead of leaving it a tie between Bold and the calligraphic Black.
+    weight: '700',
     style: Platform.select({
       ios: { fontFamily: 'Snell Roundhand' },
       android: { fontFamily: 'cursive' },
       default: { fontFamily: 'Snell Roundhand' },
+    }),
+  },
+  typewriter: {
+    label: 'Typewriter',
+    weight: '700',
+    style: Platform.select({
+      ios: { fontFamily: 'American Typewriter' },
+      android: { fontFamily: 'serif-monospace' },
+      default: { fontFamily: 'American Typewriter' },
+    }),
+  },
+  geometric: {
+    label: 'Geometric',
+    weight: '800',
+    style: Platform.select({
+      ios: { fontFamily: 'Futura' },
+      android: { fontFamily: 'sans-serif-condensed' },
+      default: { fontFamily: 'Futura' },
+    }),
+  },
+  display: {
+    label: 'Display',
+    weight: '700',
+    style: Platform.select({
+      ios: { fontFamily: 'Didot' },
+      android: { fontFamily: 'serif' },
+      default: { fontFamily: 'Didot' },
+    }),
+  },
+  engraved: {
+    label: 'Engraved',
+    weight: '700',
+    style: Platform.select({
+      ios: { fontFamily: 'Copperplate' },
+      android: { fontFamily: 'serif' },
+      default: { fontFamily: 'Copperplate' },
+    }),
+  },
+  marker: {
+    label: 'Marker',
+    // Marker Felt has no bold face; the closest-weight search settles on its widest
+    // face, which is still the chunkiest thing the family offers.
+    weight: '700',
+    style: Platform.select({
+      ios: { fontFamily: 'Marker Felt' },
+      android: { fontFamily: 'casual' },
+      default: { fontFamily: 'Marker Felt' },
     }),
   },
 }
@@ -164,11 +226,8 @@ export default function App() {
   const currentFontId = activeFontId(randomDaily, digitFont, currentTime)
 
   const fontSpecs = {
-    // fontFamily: 'undefined',
-    // fontStyle: 'italic',
     fontSize: maxFontSize,
-    fontWeight: '600',
-    // width,
+    fontWeight: FONTS[currentFontId].weight,
     ...FONTS[currentFontId].style,
   }
 
@@ -587,8 +646,8 @@ export default function App() {
                 >
                   <Text
                     style={{
+                      fontWeight: FONTS[id].weight,
                       ...FONTS[id].style,
-                      fontWeight: '600',
                       fontSize: 16,
                       color: id === currentFontId ? 'white' : 'black',
                     }}
