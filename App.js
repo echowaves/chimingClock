@@ -1,6 +1,7 @@
 /* eslint-disable global-require */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Animated,
   Platform,
   Pressable,
   SafeAreaView,
@@ -104,6 +105,17 @@ const QUARTER_MS = 15 * 60 * 1000
 // Counting quarters from epoch milliseconds is safe in every zone, since all UTC
 // offsets are multiples of 15 minutes, so these boundaries are local :00/:15/:30/:45.
 const LATE_CHIME_GRACE_MS = 2 * 60 * 1000
+
+// Settings scrollbar. This RN version's `indicatorStyle` is only 'default' |
+// 'black' | 'white' (Libraries/Components/ScrollView/ScrollView.js), so the native
+// bar cannot be kept on screen: iOS fades it out and drops it entirely when the
+// content fits, Android draws nothing before the first drag. The settings screen
+// therefore draws its own, which is also the only way to show a bar while there is
+// nothing to scroll. INSET keeps the track off the very edge of the screen.
+const SCROLLBAR_WIDTH = 4
+const SCROLLBAR_INSET = 8
+// A thumb shorter than this is hard to see or read as a thumb, however long the list.
+const SCROLLBAR_MIN_THUMB = 24
 
 export default function App() {
   useKeepAwake()
@@ -379,6 +391,57 @@ export default function App() {
     resetTicking()
   }, [currentMinute])
 
+  // Settings scrollbar geometry, measured from the scroll view itself so rotation
+  // and font changes need nothing extra: `viewport` is what the screen shows,
+  // `content` is all of it. The thumb claims the same share of the track as the
+  // viewport claims of the content, so a screen that fits everything shows a full
+  // thumb instead of no bar at all.
+  const [settingsSize, setSettingsSize] = useState({ viewport: 0, content: 0 })
+  const settingsScrollY = useRef(new Animated.Value(0)).current
+
+  const onSettingsScroll = useMemo(
+    () =>
+      Animated.event(
+        [{ nativeEvent: { contentOffset: { y: settingsScrollY } } }],
+        { useNativeDriver: true },
+      ),
+    [settingsScrollY],
+  )
+
+  const onSettingsLayout = ({ nativeEvent }) =>
+    setSettingsSize((size) =>
+      size.viewport === nativeEvent.layout.height
+        ? size
+        : { ...size, viewport: nativeEvent.layout.height },
+    )
+
+  const onSettingsContentSizeChange = (_width, contentHeight) =>
+    setSettingsSize((size) =>
+      size.content === contentHeight
+        ? size
+        : { ...size, content: contentHeight },
+    )
+
+  const trackHeight = Math.max(0, settingsSize.viewport - 2 * SCROLLBAR_INSET)
+  const hiddenHeight = Math.max(0, settingsSize.content - settingsSize.viewport)
+  const visibleShare = settingsSize.content
+    ? Math.min(1, settingsSize.viewport / settingsSize.content)
+    : 1
+  const thumbHeight = Math.max(
+    Math.min(SCROLLBAR_MIN_THUMB, trackHeight),
+    trackHeight * visibleShare,
+  )
+  // Built from the real ranges, so the thumb sits at the top of the track with the
+  // content at the top and reaches the end of it exactly when the content ends.
+  const thumbTranslateY = useMemo(
+    () =>
+      settingsScrollY.interpolate({
+        inputRange: [0, Math.max(1, hiddenHeight)],
+        outputRange: [0, Math.max(0, trackHeight - thumbHeight)],
+      }),
+    [settingsScrollY, hiddenHeight, trackHeight, thumbHeight],
+  )
+
   const styles = StyleSheet.create({
     firstScreen: {
       backgroundColor: 'white',
@@ -402,6 +465,22 @@ export default function App() {
       justifyContent: 'center',
       paddingBottom: 24,
     },
+    // Absolutely positioned inside the settings SafeAreaView, so it takes part in
+    // the centring of the column and steals no space from it.
+    settingsScrollbarTrack: {
+      position: 'absolute',
+      right: SCROLLBAR_INSET,
+      top: SCROLLBAR_INSET,
+      bottom: SCROLLBAR_INSET,
+      width: SCROLLBAR_WIDTH,
+      borderRadius: SCROLLBAR_WIDTH / 2,
+      backgroundColor: 'rgba(0, 0, 0, 0.08)',
+    },
+    settingsScrollbarThumb: {
+      width: '100%',
+      borderRadius: SCROLLBAR_WIDTH / 2,
+      backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    },
   })
 
   if (firstScreen)
@@ -410,6 +489,11 @@ export default function App() {
         <ScrollView
           style={styles.settingsScroll}
           contentContainerStyle={styles.settingsContent}
+          showsVerticalScrollIndicator={false}
+          onLayout={onSettingsLayout}
+          onContentSizeChange={onSettingsContentSizeChange}
+          onScroll={onSettingsScroll}
+          scrollEventThrottle={16}
         >
           <Text style={styles.title}>
             chimingClock will play chimes every 15 minutes. Sometimes it may get
@@ -559,6 +643,19 @@ export default function App() {
             </Text>
           </Pressable>
         </ScrollView>
+        {/* Always-visible scrollbar. pointerEvents="none" keeps it clear of the
+            slider and buttons, so it can never capture a drag. */}
+        <View pointerEvents="none" style={styles.settingsScrollbarTrack}>
+          <Animated.View
+            style={[
+              styles.settingsScrollbarThumb,
+              {
+                height: thumbHeight,
+                transform: [{ translateY: thumbTranslateY }],
+              },
+            ]}
+          />
+        </View>
       </SafeAreaView>
     )
   // console.log({ width })
