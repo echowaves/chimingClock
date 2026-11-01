@@ -602,6 +602,29 @@ export default function App() {
             />
           </View>
 
+          {/* First of the two settings groups on purpose: this is how the user
+              leaves the screen, and it must not sit behind everything they may
+              have to scroll past. */}
+          <Pressable
+            onPress={() => setFirstScreen(false)}
+            style={{
+              alignSelf: 'center',
+              // width: '90%', // Change width to '100%'
+
+              alignItems: 'center',
+              // justifyContent: 'center',
+              paddingVertical: 20,
+              paddingHorizontal: 32,
+              borderRadius: 10,
+              elevation: 5,
+              backgroundColor: 'black',
+            }}
+          >
+            <Text style={{ fontWeight: '600', fontSize: 20, color: 'white' }}>
+              {`Show the clock`}
+            </Text>
+          </Pressable>
+
           <View
             pointerEvents={fontPrefsLoaded ? 'auto' : 'none'}
             style={{
@@ -685,26 +708,6 @@ export default function App() {
               </Text>
             </Pressable>
           </View>
-
-          <Pressable
-            onPress={() => setFirstScreen(false)}
-            style={{
-              alignSelf: 'center',
-              // width: '90%', // Change width to '100%'
-
-              alignItems: 'center',
-              // justifyContent: 'center',
-              paddingVertical: 20,
-              paddingHorizontal: 32,
-              borderRadius: 10,
-              elevation: 5,
-              backgroundColor: 'black',
-            }}
-          >
-            <Text style={{ fontWeight: '600', fontSize: 20, color: 'white' }}>
-              {`Show the clock`}
-            </Text>
-          </Pressable>
         </Animated.ScrollView>
         {/* Always-visible scrollbar. pointerEvents="none" keeps it clear of the
             slider and buttons, so it can never capture a drag. */}
