@@ -161,29 +161,26 @@ const activeFontId = (randomDaily, digitFont, now, availableFontIds) => {
 }
 
 // Clock-face layout. The fitting box is the motion box (the clock screen as
-// laid out, safe-area insets included) inset by a travel margin on each side:
-// the digits are never larger than that, so travel stays free — half an inch
-// (80dp at the nominal 160dp per inch) is the ceiling of that margin, never
-// its floor, because of how the fitting actually binds: the time string is
-// wide for its height, so on a landscape phone it is the width axis that caps
-// the font size, and reserving a fixed half inch per side horizontally costs
-// near a third of a small screen's width — which is why the font still looked
-// under-filled on small devices while only the height axis was made
-// proportional. Each axis therefore takes TRAVEL_MARGIN_SHARE of itself as
-// its margin — floored at TRAVEL_MARGIN_FLOOR so ordinary small screens keep
-// real travel room, but never more than a fifth of the axis so an absurdly
-// narrow window (Android split-screen) still loses no more to travel than the
-// old proportional cap did. Text keeps ~80% of an axis at the half-inch
-// ceiling and never under three fifths anywhere. The bounce
-// runs off the measured digit box either way, so a drift extreme lands the
-// digits' layout box flush on the edge of the motion box: every edge is
-// reachable, whatever font is active and however long the string, and nothing
-// is ever drawn past one. INK_SLACK keeps glyph ink — which in script faces
-// can spill slightly past the advance box — inside the screen at that flush
-// position.
+// laid out, safe-area insets included) inset by a travel margin on each side,
+// and that margin is nothing but a drift budget: the bounce runs off the
+// measured digit box, so a drift extreme lands the digits' layout box flush
+// on the edge of the motion box — every edge is reachable, whatever font is
+// active and however long the string, and nothing is ever drawn past one.
+// INK_SLACK keeps glyph ink — which in script faces can spill slightly past
+// the advance box — inside the screen at that flush position. What the margin
+// really decides is how big the text may get (the digits are never larger
+// than the fitting box) and how far it drifts before bouncing, so it is kept
+// deliberately small: legibility from a distance wins, travel just has to
+// read as alive. Each axis takes TRAVEL_MARGIN_SHARE of itself, floored at
+// TRAVEL_MARGIN_FLOOR so even the smallest window still visibly moves; the
+// half-inch ceiling (80dp at the nominal 160dp per inch) only binds past
+// ~1300dp, well beyond any phone. On the axis that caps the font the drift
+// range is the margin itself, so a wall arrives every twenty-odd seconds at
+// 1dp per second; the roomier axis sweeps far longer — its range comes from
+// the digit box, not the margin. Calm either way, and every edge is hit.
 const EDGE_TRAVEL_MARGIN = 80
-const TRAVEL_MARGIN_SHARE = 0.1
-const TRAVEL_MARGIN_FLOOR = 28
+const TRAVEL_MARGIN_SHARE = 0.06
+const TRAVEL_MARGIN_FLOOR = 24
 // The floor only applies while it stays within TRAVEL_MARGIN_FLOOR_CAP of the
 // axis, so on a degenerate window the margin falls back to plain proportion
 // and the font can never come out smaller than the old capped formula gave.
