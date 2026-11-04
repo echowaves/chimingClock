@@ -4,13 +4,20 @@ import {
   Animated,
   Platform,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native'
 import 'react-native-gesture-handler'
+
+// react-native's own SafeAreaView is deprecated; this library also reports the
+// insets on Android, which the core component never did.
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context'
 
 import { useKeepAwake } from 'expo-keep-awake'
 import { StatusBar } from 'expo-status-bar'
@@ -292,27 +299,22 @@ function FontProbe({ probeKey, spec, onMeasured }) {
   )
 }
 
-export default function App() {
+function App() {
   useKeepAwake()
   const { height, width } = useWindowDimensions()
-  // The box the clock drifts in. The clock screen reports its real size on
-  // layout — the window minus the safe-area insets, which RN's SafeAreaView
-  // applies on iOS (on Android it is the window itself) — so fitting and
-  // bouncing both run off what is actually drawable; rotation updates it
-  // through the same report. Until the first layout arrives, fall back to
-  // the window.
-  const [motionBox, setMotionBox] = useState({ width, height })
-  const onMotionLayout = ({ nativeEvent }) => {
-    const { width: boxWidth, height: boxHeight } = nativeEvent.layout
-    setMotionBox((box) =>
-      box.width === boxWidth && box.height === boxHeight
-        ? box
-        : { width: boxWidth, height: boxHeight },
-    )
+  const insets = useSafeAreaInsets()
+  // The box the clock drifts in: the window minus the safe-area insets, which
+  // react-native-safe-area-context tracks live on both platforms, so fitting
+  // and bouncing run off what is actually drawable and a rotation updates it
+  // through either dimension or insets. The provider reports zero insets until
+  // it has measured, which falls back to the whole window.
+  const motionBox = {
+    width: Math.max(1, width - insets.left - insets.right),
+    height: Math.max(1, height - insets.top - insets.bottom),
   }
-  // Ceiling for the digits. The size actually used is the smaller of this and
-  // what the fitting box allows, so a clock that already fits keeps today's look.
-  const maxFontSize = width / 3
+  // The size drawn before the digit probe first reports a measurement — a
+  // conservative guess that the fitted size replaces on the next layout pass.
+  const guessFontSize = width / 3
   const fitWidth = Math.max(1, motionBox.width - 2 * EDGE_TRAVEL_MARGIN)
   const fitHeight = Math.max(1, motionBox.height - 2 * EDGE_TRAVEL_MARGIN)
 
@@ -415,8 +417,8 @@ export default function App() {
     availableFontIds,
   )
 
+  // The font family and weight only; each user sets its own size.
   const fontSpecs = {
-    fontSize: maxFontSize,
     fontWeight: FONTS[currentFontId].weight,
     ...FONTS[currentFontId].style,
   }
@@ -438,21 +440,21 @@ export default function App() {
   }
 
   // Line width and height both scale linearly with font size, so the measurement
-  // gives the largest size whose digits still fit the box along each axis. While a
-  // new font or time string is being measured the previous metrics keep drawing —
-  // closer than flashing back to the ceiling. Before anything is measured, assume
-  // the digits fill the fitting box.
+  // gives the largest size whose digits still fit the box along each axis — that
+  // is the whole ceiling: the digits scale up until only the travel margin is
+  // left between them and the nearest edge. While a new font or time string is
+  // being measured the previous metrics keep drawing — closer than flashing back
+  // to the guess.
   const fittedFontSize = digitMetrics
     ? Math.min(
-        maxFontSize,
         (fitWidth * MEASURE_SIZE) / digitMetrics.width,
         (fitHeight * MEASURE_SIZE) / digitMetrics.height,
       )
-    : maxFontSize
+    : guessFontSize
   const digitFontSize =
     Number.isFinite(fittedFontSize) && fittedFontSize > 0
       ? fittedFontSize
-      : maxFontSize
+      : guessFontSize
   const digitScale = digitFontSize / MEASURE_SIZE
   // Centring uses the measured box, so the clock stays in the middle of the
   // motion box on both platforms — textAlignVertical would only do it on Android.
@@ -951,58 +953,65 @@ export default function App() {
   // console.log({ width })
   return (
     // The Pressable covers the whole window, so a tap anywhere opens settings
-    // as it always did. Inside it sits the safe-area box whose size onLayout
-    // reports and which fitting and bouncing run off, so on a notched phone
-    // the drift stays clear of the notch and home indicator and the digits
-    // are fully visible at every extreme.
+    // as it always did. The digits are placed inside its safe-area box — the
+    // window inset by the live insets — so on a notched phone the drift stays
+    // clear of the notch and home indicator, on Android of the gesture nav
+    // too, and they are fully visible at every extreme.
     <Pressable
       style={{ flex: 1, backgroundColor: 'black' }}
       onPress={() => setFirstScreen(true)}
     >
-      <View
-        onLayout={onMotionLayout}
-        style={{ flex: 1, backgroundColor: 'black' }}
-      >
-        {/* Hidden probe. It reports the digits' natural width and line height at
+      {/* Hidden probe. It reports the digits' natural width and line height at
             a known small size, which is what makes the size below exact rather
             than guessed. Native auto-fit can't do this instead: iOS caps it at
             96pt and minimumFontScale is ignored on Fabric. The probe is left
             unconstrained (no width style) so the line box it reports is the
             glyphs' natural width and not the container's. */}
-        <Text
-          numberOfLines={1}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          pointerEvents="none"
-          style={{
-            ...fontSpecs,
-            fontSize: MEASURE_SIZE,
-            opacity: 0,
-            position: 'absolute',
-            left: 0,
-            top: 0,
-          }}
-          onTextLayout={onMeasureDigits}
-        >
-          {currentText}
-        </Text>
-        {/* numberOfLines is the backstop: the measured size already keeps the
+      <Text
+        numberOfLines={1}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        pointerEvents="none"
+        style={{
+          ...fontSpecs,
+          fontSize: MEASURE_SIZE,
+          opacity: 0,
+          position: 'absolute',
+          left: 0,
+          top: 0,
+        }}
+        onTextLayout={onMeasureDigits}
+      >
+        {currentText}
+      </Text>
+      {/* numberOfLines is the backstop: the measured size already keeps the
             digits inside the fitting box, so they never wrap. */}
-        <Text
-          numberOfLines={1}
-          style={{
-            ...fontSpecs,
-            fontSize: digitFontSize,
-            color: '#d0fcc5',
-            position: 'absolute',
-            left: (motionBox.width - digitWidth) / 2 + clampedXShift,
-            top: (motionBox.height - digitHeight) / 2 + clampedYShift,
-          }}
-        >
-          {currentText}
-        </Text>
-        <StatusBar hidden={true} />
-      </View>
+      <Text
+        numberOfLines={1}
+        style={{
+          ...fontSpecs,
+          fontSize: digitFontSize,
+          color: '#d0fcc5',
+          position: 'absolute',
+          left:
+            insets.left + (motionBox.width - digitWidth) / 2 + clampedXShift,
+          top:
+            insets.top + (motionBox.height - digitHeight) / 2 + clampedYShift,
+        }}
+      >
+        {currentText}
+      </Text>
+      <StatusBar hidden={true} />
     </Pressable>
+  )
+}
+
+// The library SafeAreaProvider tracks the insets live at the root, which is
+// what the settings SafeAreaView and the clock's inset maths below read.
+export default function Root() {
+  return (
+    <SafeAreaProvider>
+      <App />
+    </SafeAreaProvider>
   )
 }

@@ -13,4 +13,8 @@
 
 - source_plan: `_bmad-output/plan-clock-bounce-edge-and-font-fit.md`
   summary: On Android the clock's motion box is the full window, so digits can drift under the (transparent) navigation/gesture area; only iOS insets are honored today.
-  evidence: RN core SafeAreaView applies insets on iOS only (review finding on the bounce change, confirmed); the pre-change code had the same limitation, so it was not patched inside this build. A react-native-safe-area-context (or equivalent) provider would bound the drift by Android gesture insets too.
+  evidence: RN core SafeAreaView applies insets on iOS only (review finding on the bounce change, confirmed); the pre-change code had the same limitation, so it was not patched inside this build. A react-native-safe-area-context (or equivalent) provider would bound the drift by Android gesture insets too. [CLOSED 2026-11-03: motion box now subtracts live useSafeAreaInsets() on both platforms — see plan-safe-area-context-migration.md.]
+
+- source_plan: `_bmad-output/plan-safe-area-context-migration.md`
+  summary: Ship a fresh native (EAS) build before publishing this JS via `publish:prod` — react-native-safe-area-context adds native code that binaries built earlier do not contain.
+  evidence: OTA updates swap only the JS bundle; the new top-level imports of the RNCSafeAreaView host component and provider would throw on launch in previously shipped binaries (review finding, confirmed against the library's codegen specs). Release-ordering constraint, not a code fix.
