@@ -153,13 +153,20 @@ const activeFontId = (randomDaily, digitFont, now, availableFontIds) => {
   return normalizeFontId(wanted)
 }
 
-// Clock-face layout. The digits wander by roughly DRIFT_RANGE on each axis (the
-// stepper overshoots by two pixels before it reverses), and the fitting box is
-// the window inset by that range plus FIT_PADDING, which absorbs the overshoot.
-// Nothing is drawn outside the box, so the clock stays inside the window at
-// every point of the drift, whatever font is active and however long the string.
-const DRIFT_RANGE = 55
-const FIT_PADDING = 8
+// Clock-face layout. The fitting box is the motion box (the clock screen as
+// laid out, safe-area insets included) inset by EDGE_TRAVEL_MARGIN on each
+// side: the digits are never larger than that, so at least a nominal half inch
+// of travel stays free — 80dp at the nominal 160dp per inch, which is a full
+// half inch or more physically everywhere, since Android's density buckets
+// round up from the real ppi and iOS points run about 155-163 per inch. The
+// bounce itself runs off the measured digit box, so a drift extreme lands the
+// digits' layout box flush on the edge of the motion box: every edge is
+// reachable, whatever font is active and however long the string, and nothing
+// is ever drawn past one. INK_SLACK keeps glyph ink — which in script faces
+// can spill slightly past the advance box — inside the screen at that flush
+// position.
+const EDGE_TRAVEL_MARGIN = 80
+const INK_SLACK = 4
 
 // The digits are measured once per font + time string at this small size. Text
 // metrics scale linearly with font size, so one measurement gives exactly the
@@ -288,11 +295,26 @@ function FontProbe({ probeKey, spec, onMeasured }) {
 export default function App() {
   useKeepAwake()
   const { height, width } = useWindowDimensions()
+  // The box the clock drifts in. The clock screen reports its real size on
+  // layout — the window minus the safe-area insets, which RN's SafeAreaView
+  // applies on iOS (on Android it is the window itself) — so fitting and
+  // bouncing both run off what is actually drawable; rotation updates it
+  // through the same report. Until the first layout arrives, fall back to
+  // the window.
+  const [motionBox, setMotionBox] = useState({ width, height })
+  const onMotionLayout = ({ nativeEvent }) => {
+    const { width: boxWidth, height: boxHeight } = nativeEvent.layout
+    setMotionBox((box) =>
+      box.width === boxWidth && box.height === boxHeight
+        ? box
+        : { width: boxWidth, height: boxHeight },
+    )
+  }
   // Ceiling for the digits. The size actually used is the smaller of this and
   // what the fitting box allows, so a clock that already fits keeps today's look.
   const maxFontSize = width / 3
-  const fitWidth = Math.max(1, width - 2 * (DRIFT_RANGE + FIT_PADDING))
-  const fitHeight = Math.max(1, height - 2 * (DRIFT_RANGE + FIT_PADDING))
+  const fitWidth = Math.max(1, motionBox.width - 2 * EDGE_TRAVEL_MARGIN)
+  const fitHeight = Math.max(1, motionBox.height - 2 * EDGE_TRAVEL_MARGIN)
 
   const [firstScreen, setFirstScreen] = useState(true)
 
@@ -433,11 +455,22 @@ export default function App() {
       : maxFontSize
   const digitScale = digitFontSize / MEASURE_SIZE
   // Centring uses the measured box, so the clock stays in the middle of the
-  // window on both platforms — textAlignVertical would only do it on Android.
+  // motion box on both platforms — textAlignVertical would only do it on Android.
   const digitWidth = digitMetrics ? digitMetrics.width * digitScale : fitWidth
   const digitHeight = digitMetrics
     ? digitMetrics.height * digitScale
     : fitHeight
+
+  // How far from centre each axis may drift before its wall: half the free
+  // space in the motion box, less the ink slack. Computed on every render and
+  // shared by the bounce in the clock effect and the placement in the clock
+  // screen, so a digit box that grew since the last tick — a longer time
+  // string, the daily font swap — can never leave a stale shift drawn past an
+  // edge while waiting for that tick.
+  const xRange = Math.max(0, (motionBox.width - digitWidth) / 2 - INK_SLACK)
+  const yRange = Math.max(0, (motionBox.height - digitHeight) / 2 - INK_SLACK)
+  const clampedXShift = Math.max(-xRange, Math.min(xRange, xShift))
+  const clampedYShift = Math.max(-yRange, Math.min(yRange, yShift))
 
   const initChimingTime = async () => {
     setChimingTimeRange(
@@ -516,14 +549,24 @@ export default function App() {
   useEffect(() => {
     const minute = dayjs(currentTime).minute()
 
-    // essential, this will shift direction eventually
-    if (xShift >= DRIFT_RANGE) setXStep(-1)
-    if (xShift < -DRIFT_RANGE) setXStep(1)
-    if (yShift > DRIFT_RANGE) setYStep(-1)
-    if (yShift < -DRIFT_RANGE) setYStep(1)
-
-    setXShift(xShift + xStep)
-    setYShift(yShift + yStep)
+    // Bounce off the walls: step first, then clamp at the wall and reverse.
+    // Clamping makes overshoot impossible, so a shift is never stored past
+    // its wall, and one left outside a range that shrank mid-flight (a new
+    // font or time string) is pulled back inside here. The axes share one
+    // speed, so the drift stays diagonal and sweeps the corners between its
+    // wall hits. xRange/yRange come from the render scope, where they clamp
+    // placement too — the walls and the drawing cannot disagree.
+    const nextShift = (shift, step, range) => {
+      if (shift + step >= range) return [-1, range]
+      if (shift + step <= -range) return [1, -range]
+      return [step, shift + step]
+    }
+    const [nextXStep, nextXShift] = nextShift(xShift, xStep, xRange)
+    const [nextYStep, nextYShift] = nextShift(yShift, yStep, yRange)
+    setXStep(nextXStep)
+    setYStep(nextYStep)
+    setXShift(nextXShift)
+    setYShift(nextYShift)
 
     if (currentMinute !== minute) {
       setCurrentMinute(minute)
@@ -907,16 +950,18 @@ export default function App() {
     )
   // console.log({ width })
   return (
-    <SafeAreaView style={{ backgroundColor: 'black' }}>
-      <Pressable
-        style={{
-          backgroundColor: 'black',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width, // Change width to '100%'
-          height, // Change height to '100%'
-        }}
-        onPress={() => setFirstScreen(true)}
+    // The Pressable covers the whole window, so a tap anywhere opens settings
+    // as it always did. Inside it sits the safe-area box whose size onLayout
+    // reports and which fitting and bouncing run off, so on a notched phone
+    // the drift stays clear of the notch and home indicator and the digits
+    // are fully visible at every extreme.
+    <Pressable
+      style={{ flex: 1, backgroundColor: 'black' }}
+      onPress={() => setFirstScreen(true)}
+    >
+      <View
+        onLayout={onMotionLayout}
+        style={{ flex: 1, backgroundColor: 'black' }}
       >
         {/* Hidden probe. It reports the digits' natural width and line height at
             a known small size, which is what makes the size below exact rather
@@ -950,14 +995,14 @@ export default function App() {
             fontSize: digitFontSize,
             color: '#d0fcc5',
             position: 'absolute',
-            left: (width - digitWidth) / 2 + xShift,
-            top: (height - digitHeight) / 2 + yShift,
+            left: (motionBox.width - digitWidth) / 2 + clampedXShift,
+            top: (motionBox.height - digitHeight) / 2 + clampedYShift,
           }}
         >
           {currentText}
         </Text>
         <StatusBar hidden={true} />
-      </Pressable>
-    </SafeAreaView>
+      </View>
+    </Pressable>
   )
 }

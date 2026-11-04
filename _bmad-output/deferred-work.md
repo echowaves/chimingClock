@@ -10,3 +10,7 @@
 - source_plan: `/Users/dmitry/hacks/chimingClock/_bmad-output/plan-settings-screen-scroll.md`
   summary: Vertical scrolling is blocked where the MultiSlider thumbs and between-track capture the pan gesture, so users must scroll from other areas of the settings screen.
   evidence: MultiSlider sets onMoveShouldSetPanResponderCapture: true, onPanResponderTerminationRequest: false and onShouldBlockNativeResponder: true (node_modules/@ptomasroos/react-native-multi-slider/MultiSlider.js:78-87) on the marker and between views; verified in source. Real (medium); a scrollEnabled-toggle workaround risks breaking the currently-working drag and cannot be device-verified in this environment.
+
+- source_plan: `_bmad-output/plan-clock-bounce-edge-and-font-fit.md`
+  summary: On Android the clock's motion box is the full window, so digits can drift under the (transparent) navigation/gesture area; only iOS insets are honored today.
+  evidence: RN core SafeAreaView applies insets on iOS only (review finding on the bounce change, confirmed); the pre-change code had the same limitation, so it was not patched inside this build. A react-native-safe-area-context (or equivalent) provider would bound the drift by Android gesture insets too.
