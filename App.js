@@ -162,25 +162,40 @@ const activeFontId = (randomDaily, digitFont, now, availableFontIds) => {
 
 // Clock-face layout. The fitting box is the motion box (the clock screen as
 // laid out, safe-area insets included) inset by a travel margin on each side:
-// the digits are never larger than that, so travel stays free — nominally half
-// an inch, 80dp at the nominal 160dp per inch, which is a full half inch or
-// more physically on Android (its density buckets round up from the real ppi)
-// and about half an inch on iOS (points run ~155-163 per inch). But a fixed
-// reservation eats proportionally more of a small screen — 80dp per side is
-// over half of a 300dp-tall landscape phone, leaving the digits under half of
-// their binding axis — so each axis caps the margin at TRAVEL_MARGIN_SHARE of
-// itself: even on the smallest device two fifths of every axis stays free for
-// travel and three fifths for text, small devices trading a little travel
-// room for a legible clock while normal phones keep the half inch. The bounce itself runs off the measured digit box, so a drift extreme
-// lands the digits' layout box flush on the edge of the motion box: every edge
-// is reachable, whatever font is active and however long the string, and
-// nothing is ever drawn past one. INK_SLACK keeps glyph ink — which in script
-// faces can spill slightly past the advance box — inside the screen at that
-// flush position.
+// the digits are never larger than that, so travel stays free — half an inch
+// (80dp at the nominal 160dp per inch) is the ceiling of that margin, never
+// its floor, because of how the fitting actually binds: the time string is
+// wide for its height, so on a landscape phone it is the width axis that caps
+// the font size, and reserving a fixed half inch per side horizontally costs
+// near a third of a small screen's width — which is why the font still looked
+// under-filled on small devices while only the height axis was made
+// proportional. Each axis therefore takes TRAVEL_MARGIN_SHARE of itself as
+// its margin — floored at TRAVEL_MARGIN_FLOOR so ordinary small screens keep
+// real travel room, but never more than a fifth of the axis so an absurdly
+// narrow window (Android split-screen) still loses no more to travel than the
+// old proportional cap did. Text keeps ~80% of an axis at the half-inch
+// ceiling and never under three fifths anywhere. The bounce
+// runs off the measured digit box either way, so a drift extreme lands the
+// digits' layout box flush on the edge of the motion box: every edge is
+// reachable, whatever font is active and however long the string, and nothing
+// is ever drawn past one. INK_SLACK keeps glyph ink — which in script faces
+// can spill slightly past the advance box — inside the screen at that flush
+// position.
 const EDGE_TRAVEL_MARGIN = 80
-const TRAVEL_MARGIN_SHARE = 0.2
+const TRAVEL_MARGIN_SHARE = 0.1
+const TRAVEL_MARGIN_FLOOR = 28
+// The floor only applies while it stays within TRAVEL_MARGIN_FLOOR_CAP of the
+// axis, so on a degenerate window the margin falls back to plain proportion
+// and the font can never come out smaller than the old capped formula gave.
+const TRAVEL_MARGIN_FLOOR_CAP = 0.2
 const travelMargin = (axisSize) =>
-  Math.min(EDGE_TRAVEL_MARGIN, axisSize * TRAVEL_MARGIN_SHARE)
+  Math.min(
+    EDGE_TRAVEL_MARGIN,
+    Math.max(
+      Math.min(TRAVEL_MARGIN_FLOOR, axisSize * TRAVEL_MARGIN_FLOOR_CAP),
+      axisSize * TRAVEL_MARGIN_SHARE,
+    ),
+  )
 const INK_SLACK = 4
 
 // The digits are measured once per font + time string at this small size. Text
