@@ -161,18 +161,26 @@ const activeFontId = (randomDaily, digitFont, now, availableFontIds) => {
 }
 
 // Clock-face layout. The fitting box is the motion box (the clock screen as
-// laid out, safe-area insets included) inset by EDGE_TRAVEL_MARGIN on each
-// side: the digits are never larger than that, so at least a nominal half inch
-// of travel stays free — 80dp at the nominal 160dp per inch, which is a full
-// half inch or more physically everywhere, since Android's density buckets
-// round up from the real ppi and iOS points run about 155-163 per inch. The
-// bounce itself runs off the measured digit box, so a drift extreme lands the
-// digits' layout box flush on the edge of the motion box: every edge is
-// reachable, whatever font is active and however long the string, and nothing
-// is ever drawn past one. INK_SLACK keeps glyph ink — which in script faces
-// can spill slightly past the advance box — inside the screen at that flush
-// position.
+// laid out, safe-area insets included) inset by a travel margin on each side:
+// the digits are never larger than that, so travel stays free — nominally half
+// an inch, 80dp at the nominal 160dp per inch, which is a full half inch or
+// more physically on Android (its density buckets round up from the real ppi)
+// and about half an inch on iOS (points run ~155-163 per inch). But a fixed
+// reservation eats proportionally more of a small screen — 80dp per side is
+// over half of a 300dp-tall landscape phone, leaving the digits under half of
+// their binding axis — so each axis caps the margin at TRAVEL_MARGIN_SHARE of
+// itself: even on the smallest device two fifths of every axis stays free for
+// travel and three fifths for text, small devices trading a little travel
+// room for a legible clock while normal phones keep the half inch. The bounce itself runs off the measured digit box, so a drift extreme
+// lands the digits' layout box flush on the edge of the motion box: every edge
+// is reachable, whatever font is active and however long the string, and
+// nothing is ever drawn past one. INK_SLACK keeps glyph ink — which in script
+// faces can spill slightly past the advance box — inside the screen at that
+// flush position.
 const EDGE_TRAVEL_MARGIN = 80
+const TRAVEL_MARGIN_SHARE = 0.2
+const travelMargin = (axisSize) =>
+  Math.min(EDGE_TRAVEL_MARGIN, axisSize * TRAVEL_MARGIN_SHARE)
 const INK_SLACK = 4
 
 // The digits are measured once per font + time string at this small size. Text
@@ -315,8 +323,14 @@ function App() {
   // The size drawn before the digit probe first reports a measurement — a
   // conservative guess that the fitted size replaces on the next layout pass.
   const guessFontSize = width / 3
-  const fitWidth = Math.max(1, motionBox.width - 2 * EDGE_TRAVEL_MARGIN)
-  const fitHeight = Math.max(1, motionBox.height - 2 * EDGE_TRAVEL_MARGIN)
+  const fitWidth = Math.max(
+    1,
+    motionBox.width - 2 * travelMargin(motionBox.width),
+  )
+  const fitHeight = Math.max(
+    1,
+    motionBox.height - 2 * travelMargin(motionBox.height),
+  )
 
   const [firstScreen, setFirstScreen] = useState(true)
 
