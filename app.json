@@ -4,7 +4,7 @@
     "slug": "chimingclock",
     "owner": "echowaves",
     "version": "2.0.2",
-    "orientation": "landscape",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "updates": {
@@ -41,7 +41,7 @@
       [
         "expo-screen-orientation",
         {
-          "initialOrientation": "LANDSCAPE"
+          "initialOrientation": "DEFAULT"
         }
       ],
       "expo-secure-store",

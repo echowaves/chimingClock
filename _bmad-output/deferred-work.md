@@ -18,3 +18,14 @@
 - source_plan: `_bmad-output/plan-safe-area-context-migration.md`
   summary: Ship a fresh native (EAS) build before publishing this JS via `publish:prod` — react-native-safe-area-context adds native code that binaries built earlier do not contain.
   evidence: OTA updates swap only the JS bundle; the new top-level imports of the RNCSafeAreaView host component and provider would throw on launch in previously shipped binaries (review finding, confirmed against the library's codegen specs). Release-ordering constraint, not a code fix.
+- source_plan: `_bmad-output/plan-screen-rotation-all-devices.md`
+  summary: Historical plans still state the landscape lock as current fact, which can mislead an agent that reads them instead of app.json.
+  evidence: Review finding on the rotation change (confirmed): `plan-settings-screen-scroll.md:34,42,51`, `plan-dynamic-clock-font-fit.md:22` and `plan-clock-bounce-edge-and-font-fit.md:60` all assert `"orientation": "landscape"` or "locked to landscape", now false since app.json moved to `"default"`. Left untouched because `bmod-method/help/artifact-lifetime.md` treats historical plans as evidence, not current truth, and two of the lines sit inside frozen blocks. A read-scope line in AGENTS.md (agents read only the active plan, never old ones, for current state) would fix the confusion without rewriting history — that edit touches agent rules, so it needs a human decision.
+
+- source_plan: `_bmad-output/plan-screen-rotation-all-devices.md`
+  summary: The rotation change reaches users only through a fresh EAS binary, and the pinned build numbers may need another bump to upload it.
+  evidence: `app.json` pins `ios.buildNumber "26"` and `android.versionCode 26` (set by `bea3bff`); both keys are explicit values rather than `autoIncrement`, so an upload of build 27 requires an edit. Version bumps in this repo are separate human release commits (`bea3bff`, `ba7b573`), and `plan-settings-screen-scroll.md:34` records deliberately excluding one from a feature commit, so the rotation change does not carry it. Release-ordering constraint, not a code fix.
+
+- source_plan: `_bmad-output/plan-screen-rotation-all-devices.md`
+  summary: The repo's Codacy instruction file asks for a `codacy_cli_analyze` pass after every edited file; that pass could not be run in this session.
+  evidence: `.github/instructions/codacy.instructions.md` (gitignored; no `AGENTS.md`/`CLAUDE.md` exists at the root) mandates the tool after each `edit_file`, and `.codacy/cli.sh` plus `.codacy/codacy.yaml` are tracked, but no Codacy MCP tool was available to call. Settles as: whether config-only changes such as `app.json` are expected to get a CLI analysis pass at all, and if so, who runs it.
