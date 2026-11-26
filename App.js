@@ -14,11 +14,7 @@ import 'react-native-gesture-handler'
 
 // react-native's own SafeAreaView is deprecated; this library also reports the
 // insets on Android, which the core component never did.
-import {
-  SafeAreaProvider,
-  SafeAreaView,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context'
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 
 import { useKeepAwake } from 'expo-keep-awake'
 import { StatusBar } from 'expo-status-bar'
@@ -188,51 +184,38 @@ const FONTS = {
 // universe a stored selection is validated against.
 const ALL_FONT_IDS = Object.keys(FONTS)
 
-// Clock-face layout. The fitting box is the motion box (the clock screen as
-// laid out, safe-area insets included) inset by a travel margin on each side,
+// Clock-face layout. The fitting box is the motion box (the whole clock
+// screen) inset by a travel margin on each side,
 // and that margin is nothing but a drift budget: the walls run off the extent
 // actually drawn — the larger of the measured digit box and the clock row's own
 // reported layout box — so a drift extreme lands what is on screen flush on the
 // edge of the motion box, every edge is reachable whatever font is active and
-// however long the string, and nothing is ever drawn past one. INK_SLACK keeps
-// glyph ink — which in script faces can spill slightly past the advance box, and
-// past the layout box along with it — inside the screen at that flush position.
-// Because the walls now come from the real laid-out row rather than from a probe's
-// advance metrics, INK_SLACK is all an edge costs — but only once the row has
-// reported this font + string. Until it does, the walls sit on the probe's advance
-// box, which is exactly the estimate UNKNOWN_EXTENT_SLACK used to stand in for, so
-// that larger gap is what an edge costs meanwhile. What the margin really
-// decides is how big the text may get (the digits are never larger than the fitting
-// box) and how far it drifts before bouncing, so it is kept deliberately small:
-// legibility from a distance wins, travel just has to read as alive. Each axis
-// takes TRAVEL_MARGIN_SHARE of itself, floored at TRAVEL_MARGIN_FLOOR so even the
-// smallest window still visibly moves; the half-inch ceiling (80dp at the nominal
-// 160dp per inch) only binds past ~1300dp, well beyond any phone. A leg leaves a
-// wall at a fresh random angle inside a band around the axes (see clockMotion), so
-// how long one takes depends on that draw rather than on a fixed sweep: a leg
-// running almost parallel to an edge can go tens of minutes before it meets
-// another wall, while a steeper one crosses in well under a minute. Calm either
-// way, and every edge is hit.
-const EDGE_TRAVEL_MARGIN = 80
-const TRAVEL_MARGIN_SHARE = 0.06
-const TRAVEL_MARGIN_FLOOR = 24
-// The floor only applies while it stays within TRAVEL_MARGIN_FLOOR_CAP of the
-// axis, so on a degenerate window the margin falls back to plain proportion
-// and the font can never come out smaller than the old capped formula gave.
-const TRAVEL_MARGIN_FLOOR_CAP = 0.2
-const travelMargin = (axisSize) =>
-  Math.min(
-    EDGE_TRAVEL_MARGIN,
-    Math.max(
-      Math.min(TRAVEL_MARGIN_FLOOR, axisSize * TRAVEL_MARGIN_FLOOR_CAP),
-      axisSize * TRAVEL_MARGIN_SHARE,
-    ),
-  )
-// The only thing left between the drawn digits and an edge once a leg has landed them
-// flush on it: glyph ink that spills past the row's own layout box in script faces,
-// plus a hair for antialiasing at the boundary. Measured off the real laid-out row,
-// ink alone is enough — so this is what an edge costs while the row's own box is known.
+// however long the string, and nothing is ever drawn past one. Because the
+// walls come from the real laid-out row, INK_SLACK is all an edge costs — but
+// only once the row has reported this font + string; until then the walls sit
+// on the probe's advance box and UNKNOWN_EXTENT_SLACK is what an edge costs
+// (that larger gap covers what an unverified estimate may have missed).
+// The digits are sized to the window inset by a small per-side travel room:
+// exactly enough room for a leg to travel and bounce off each edge, and nothing
+// more. Without that room the binding axis has no range at all — the drawn box
+// fills the window to within the ink slack, so xRange or yRange comes out 0,
+// that axis is pinned at its centre and the clock can only move along the
+// other one. The room is per side on every axis, so both axes carry a real
+// bounce: the binding axis takes the small constant, the free axis (the aspect
+// ratio of the time string leaves it under-filled) takes whatever the text
+// leaves over. The bounce itself still lands flush on the edge of the screen —
+// the walls run off the extent actually drawn — so the text touches the edge
+// and only then bounces.
+// Glyph ink that spills past the row's own layout box in script faces, plus a hair
+// of antialiasing at the boundary. Measured off the real laid-out row, ink alone
+// is enough — so this is what an edge costs while the row's own box is known.
 const INK_SLACK = 1
+// The smallest resting gap that keeps the clock genuinely moving on both
+// axes: a per-side room of travel on top of the ink slack, so every axis has
+// at least this far to bounce. Kept tight on purpose — it is the only gap
+// the face shows between the text and the screen at rest.
+const TRAVEL_ROOM = 8
+const travelMargin = () => INK_SLACK + TRAVEL_ROOM
 // What an edge costs while it is not: until the row reports a box for the current font
 // + string, the walls can only sit on the probe's advance metrics, and that estimate is
 // exactly what the old, permanent 4dp gap used to cover. Paying it again for those few
@@ -368,27 +351,20 @@ function FontProbe({ probeKey, spec, onMeasured }) {
 function App() {
   useKeepAwake()
   const { height, width } = useWindowDimensions()
-  const insets = useSafeAreaInsets()
-  // The box the clock drifts in: the window minus the safe-area insets, which
-  // react-native-safe-area-context tracks live on both platforms, so fitting
-  // and bouncing run off what is actually drawable and a rotation updates it
-  // through either dimension or insets. The provider reports zero insets until
-  // it has measured, which falls back to the whole window.
+  // The box the clock drifts in: the whole window. The safe-area insets are
+  // deliberately not subtracted — the time text is sized to hug the screen and
+  // should run right up to its edges, notch and home indicator included; on the
+  // black background that is the whole point of the face. A rotation updates it
+  // through the window dimensions alone.
   const motionBox = {
-    width: Math.max(1, width - insets.left - insets.right),
-    height: Math.max(1, height - insets.top - insets.bottom),
+    width: Math.max(1, width),
+    height: Math.max(1, height),
   }
   // The size drawn before the digit probe first reports a measurement — a
   // conservative guess that the fitted size replaces on the next layout pass.
   const guessFontSize = width / 3
-  const fitWidth = Math.max(
-    1,
-    motionBox.width - 2 * travelMargin(motionBox.width),
-  )
-  const fitHeight = Math.max(
-    1,
-    motionBox.height - 2 * travelMargin(motionBox.height),
-  )
+  const fitWidth = Math.max(1, motionBox.width - 2 * travelMargin())
+  const fitHeight = Math.max(1, motionBox.height - 2 * travelMargin())
 
   const [firstScreen, setFirstScreen] = useState(true)
 
@@ -1334,10 +1310,9 @@ function App() {
   // console.log({ width })
   return (
     // The Pressable covers the whole window, so a tap anywhere opens settings
-    // as it always did. The digits are placed inside its safe-area box — the
-    // window inset by the live insets — so on a notched phone the drift stays
-    // clear of the notch and home indicator, on Android of the gesture nav
-    // too, and they are fully visible at every extreme.
+    // as it always did. The digits are placed in the window itself, not a safe
+    // box, so they hug the screen edges — the one thing left between text and
+    // edge is the ink slack.
     <Pressable
       style={{ flex: 1, backgroundColor: 'black' }}
       onPress={() => setFirstScreen(true)}
@@ -1402,10 +1377,8 @@ function App() {
       <View
         style={{
           position: 'absolute',
-          left:
-            insets.left + (motionBox.width - digitWidth) / 2 + clampedXShift,
-          top:
-            insets.top + (motionBox.height - digitHeight) / 2 + clampedYShift,
+          left: (motionBox.width - digitWidth) / 2 + clampedXShift,
+          top: (motionBox.height - digitHeight) / 2 + clampedYShift,
           width: digitWidth,
           height: digitHeight,
         }}
@@ -1451,7 +1424,7 @@ function App() {
 }
 
 // The library SafeAreaProvider tracks the insets live at the root, which is
-// what the settings SafeAreaView and the clock's inset maths below read.
+// what the settings SafeAreaView reads.
 export default function Root() {
   return (
     <SafeAreaProvider>

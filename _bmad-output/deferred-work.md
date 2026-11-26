@@ -13,7 +13,7 @@
 
 - source_plan: `_bmad-output/plan-clock-bounce-edge-and-font-fit.md`
   summary: On Android the clock's motion box is the full window, so digits can drift under the (transparent) navigation/gesture area; only iOS insets are honored today.
-  evidence: RN core SafeAreaView applies insets on iOS only (review finding on the bounce change, confirmed); the pre-change code had the same limitation, so it was not patched inside this build. A react-native-safe-area-context (or equivalent) provider would bound the drift by Android gesture insets too. [CLOSED 2026-11-03: motion box now subtracts live useSafeAreaInsets() on both platforms — see plan-safe-area-context-migration.md.]
+  evidence: RN core SafeAreaView applies insets on iOS only (review finding on the bounce change, confirmed); the pre-change code had the same limitation, so it was not patched inside this build. A react-native-safe-area-context (or equivalent) provider would bound the drift by Android gesture insets too. [CLOSED 2026-11-03: motion box now subtracts live useSafeAreaInsets() on both platforms — see plan-safe-area-context-migration.md.] [SUPERSEDED 2026-11-26: text hugging the screen edge was explicitly renegotiated by the human — motion box is now the whole window again, insets subtracted nowhere, digits may run under notch/home-indicator/gesture area by design — see plan-clock-flush-edge-fit.md. Reverted intentionally, not a regression.]
 
 - source_plan: `_bmad-output/plan-safe-area-context-migration.md`
   summary: Ship a fresh native (EAS) build before publishing this JS via `publish:prod` — react-native-safe-area-context adds native code that binaries built earlier do not contain.
