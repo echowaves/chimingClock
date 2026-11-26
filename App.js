@@ -31,6 +31,8 @@ import * as SecureStore from 'expo-secure-store'
 
 import MultiSlider from '@ptomasroos/react-native-multi-slider'
 
+import { isHourInActiveRange, isTickingAudible } from './soundGating'
+
 import {
   drawDailyFont,
   isTodayPick,
@@ -48,6 +50,9 @@ const DIGIT_FONTS_KEY = 'digitFonts'
 const DAILY_PICK_KEY = 'dailyFontPick'
 const SHOW_SECONDS_KEY = 'showSeconds'
 const PULSE_SEPARATOR_KEY = 'pulseSeparator'
+// Absent in storage means On: the tick has played since the first build, and neither a
+// fresh install nor an upgrade should lose it.
+const TICKING_SOUND_KEY = 'tickingSound'
 const LEGACY_DIGIT_FONT_KEY = 'digitFont'
 const LEGACY_RANDOM_DAILY_KEY = 'randomDaily'
 
@@ -389,6 +394,11 @@ function App() {
   // ref, not state: it must never re-render or batch with the clock itself.
   const lastChimedQuarter = useRef(null)
 
+  // Whether the looping tick player is currently meant to be running. A ref because
+  // it only exists to make the start/stop below edge-triggered: without it every
+  // minute tick would pause, rewind and seek a player that is already stopped.
+  const tickingRunning = useRef(false)
+
   const CHIMING_TIME_RANGE = 'chimingTimeRange'
   const [chimingTimeRange, setChimingTimeRange] = useState(null)
 
@@ -399,6 +409,9 @@ function App() {
   const [dailyPick, setDailyPick] = useState(null)
   const [showSeconds, setShowSeconds] = useState(null)
   const [pulseSeparator, setPulseSeparator] = useState(null)
+  // null until loaded, and treated as On while unloaded — the same default storage
+  // gives a missing key — so the pill never shows Off for a value nobody chose.
+  const [tickingSound, setTickingSound] = useState(null)
   // Until the prefs load finishes, the font controls are shown but inert, so a
   // early tap can't be clobbered by (or clobber) the values init is reading.
   const [fontPrefsLoaded, setFontPrefsLoaded] = useState(false)
@@ -635,6 +648,19 @@ function App() {
     )
   }
 
+  const initTickingPref = async () => {
+    try {
+      const saved = await SecureStore.getItemAsync(TICKING_SOUND_KEY)
+      const stored = saved === null ? null : JSON.parse(saved)
+      // Anything other than an explicit `false` — a key never written, or a value this
+      // version does not recognise — means On.
+      setTickingSound(stored !== false)
+    } catch {
+      // Unreadable: leave it unloaded, which renders and sounds as On, and the save
+      // effect below skips it so a bad read cannot overwrite an intact value.
+    }
+  }
+
   const initDigitFontPrefs = async () => {
     // Only successful reads write state. A corrupt or unreadable stored value
     // leaves prefs null (renders as every offered font) and is never written back
@@ -709,14 +735,16 @@ function App() {
 
     const tick = createAudioPlayer(require('./assets/ticktack.mp3'))
     setTickSound(tick)
+    // Looping, but deliberately not started here: the gate below owns the first start,
+    // so nothing sounds before the preference and the time range are known.
     tick.loop = true
-    tick.play()
   }
 
   useEffect(() => {
     ;(async () => {
       await setAudioModeAsync({ playsInSilentMode: true })
       await initChimingTime()
+      await initTickingPref()
       await initDigitFontPrefs()
       initSounds()
     })()
@@ -805,32 +833,48 @@ function App() {
     return () => breath.stop()
   }, [pulseSeparator, firstScreen, separatorPulse])
 
-  const isSoundEnabled = () => {
-    const currentHour = dayjs(currentTime).hour()
+  // The bells' quiet-hours rule, delegated to the shared module so the ticking cannot
+  // drift into disagreeing with it about which hours are active.
+  const isSoundEnabled = () =>
+    isHourInActiveRange(dayjs(currentTime).hour(), chimingTimeRange)
 
-    if (
-      currentHour >= chimingTimeRange?.min &&
-      currentHour < chimingTimeRange?.max
-    ) {
-      return true
-    }
-    return false
-  }
-
+  // The tick's own switch sits on top of that window: preference first, then hours.
+  // Off stops the looping player instead of muting it — a muted loop keeps decoding
+  // all day — and rewinding on the way out means the next start begins at the top of
+  // the clip rather than half-way through a "tick". The ref makes this edge-triggered,
+  // so the minute tick that calls it as hours pass by costs nothing when nothing
+  // changed.
   const resetTicking = () => {
-    if (tickSound) tickSound.volume = isSoundEnabled() ? 1 : 0
+    if (!tickSound) return
+    const audible = isTickingAudible({
+      enabled: tickingSound,
+      hour: dayjs(currentTime).hour(),
+      range: chimingTimeRange,
+    })
+    if (audible === tickingRunning.current) return
+    tickingRunning.current = audible
+    if (audible) {
+      tickSound.play()
+    } else {
+      tickSound.pause()
+      tickSound.seekTo(0).catch(() => {})
+    }
   }
 
   useEffect(() => {
-    resetTicking()
     if (chimingTimeRange) {
       SecureStore.setItemAsync(
         CHIMING_TIME_RANGE,
         JSON.stringify(chimingTimeRange),
       )
     }
-    // console.log({ chimingTimeRange: JSON.stringify(chimingTimeRange) })
   }, [chimingTimeRange])
+
+  // The tick follows its switch, the active range and the player arriving. A tap on
+  // the pill gets through here; hour boundaries get through on the minute tick below.
+  useEffect(() => {
+    resetTicking()
+  }, [tickSound, tickingSound, chimingTimeRange])
 
   useEffect(() => {
     if (digitFonts) persistPref(DIGIT_FONTS_KEY, digitFonts)
@@ -848,6 +892,12 @@ function App() {
     if (pulseSeparator !== null)
       persistPref(PULSE_SEPARATOR_KEY, pulseSeparator)
   }, [pulseSeparator])
+
+  // Guarded on the loaded state like its siblings: while the read is outstanding — or
+  // if it failed — nothing is written, so a default can never overwrite a stored one.
+  useEffect(() => {
+    if (tickingSound !== null) persistPref(TICKING_SOUND_KEY, tickingSound)
+  }, [tickingSound])
 
   // The hour and minute are the quarter's own, so a chime that lands late still
   // sounds the bell for the hour it is announcing.
@@ -882,7 +932,8 @@ function App() {
     play(boundary.hour(), boundary.minute())
   }, [currentTime])
 
-  // The tick volume follows the active time range as hours pass by it.
+  // The minute tick is what notices an hour crossing the edge of the active range while
+  // the app sits open; the gate itself no-ops unless something actually changed.
   useEffect(() => {
     resetTicking()
   }, [currentMinute])
@@ -1159,6 +1210,14 @@ function App() {
                   label: 'Pulsing separator',
                   value: pulseSeparator === true,
                   onToggle: () => setPulseSeparator(pulseSeparator !== true),
+                },
+                // The one sound control in this row. It reads On while its value is
+                // still loading, matching the default and the gate that drives the
+                // player, and tapping it then turns the tick off rather than on.
+                {
+                  label: 'Ticking sound',
+                  value: tickingSound !== false,
+                  onToggle: () => setTickingSound(tickingSound === false),
                 },
               ].map(({ label, value, onToggle }) => (
                 <Pressable
