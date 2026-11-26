@@ -42,6 +42,8 @@ import {
   todayKey,
 } from './fontSelection'
 
+import { advanceMotion, motionRanges } from './clockMotion'
+
 // Preferences. `digitFonts` is the set the clock rotates through and
 // `dailyFontPick` is today's draw from it, `{ id, date }`, kept so a relaunch
 // later the same day shows the face the user already saw. The two legacy keys are
@@ -188,22 +190,29 @@ const ALL_FONT_IDS = Object.keys(FONTS)
 
 // Clock-face layout. The fitting box is the motion box (the clock screen as
 // laid out, safe-area insets included) inset by a travel margin on each side,
-// and that margin is nothing but a drift budget: the bounce runs off the
-// measured digit box, so a drift extreme lands the digits' layout box flush
-// on the edge of the motion box — every edge is reachable, whatever font is
-// active and however long the string, and nothing is ever drawn past one.
-// INK_SLACK keeps glyph ink — which in script faces can spill slightly past
-// the advance box — inside the screen at that flush position. What the margin
-// really decides is how big the text may get (the digits are never larger
-// than the fitting box) and how far it drifts before bouncing, so it is kept
-// deliberately small: legibility from a distance wins, travel just has to
-// read as alive. Each axis takes TRAVEL_MARGIN_SHARE of itself, floored at
-// TRAVEL_MARGIN_FLOOR so even the smallest window still visibly moves; the
-// half-inch ceiling (80dp at the nominal 160dp per inch) only binds past
-// ~1300dp, well beyond any phone. On the axis that caps the font the drift
-// range is the margin itself, so a wall arrives every two-odd minutes at
-// DRIFT_STEP per second; the roomier axis sweeps far longer — its range comes from
-// the digit box, not the margin. Calm either way, and every edge is hit.
+// and that margin is nothing but a drift budget: the walls run off the extent
+// actually drawn — the larger of the measured digit box and the clock row's own
+// reported layout box — so a drift extreme lands what is on screen flush on the
+// edge of the motion box, every edge is reachable whatever font is active and
+// however long the string, and nothing is ever drawn past one. INK_SLACK keeps
+// glyph ink — which in script faces can spill slightly past the advance box, and
+// past the layout box along with it — inside the screen at that flush position.
+// Because the walls now come from the real laid-out row rather than from a probe's
+// advance metrics, INK_SLACK is all an edge costs — but only once the row has
+// reported this font + string. Until it does, the walls sit on the probe's advance
+// box, which is exactly the estimate UNKNOWN_EXTENT_SLACK used to stand in for, so
+// that larger gap is what an edge costs meanwhile. What the margin really
+// decides is how big the text may get (the digits are never larger than the fitting
+// box) and how far it drifts before bouncing, so it is kept deliberately small:
+// legibility from a distance wins, travel just has to read as alive. Each axis
+// takes TRAVEL_MARGIN_SHARE of itself, floored at TRAVEL_MARGIN_FLOOR so even the
+// smallest window still visibly moves; the half-inch ceiling (80dp at the nominal
+// 160dp per inch) only binds past ~1300dp, well beyond any phone. A leg leaves a
+// wall at a fresh random angle inside a band around the axes (see clockMotion), so
+// how long one takes depends on that draw rather than on a fixed sweep: a leg
+// running almost parallel to an edge can go tens of minutes before it meets
+// another wall, while a steeper one crosses in well under a minute. Calm either
+// way, and every edge is hit.
 const EDGE_TRAVEL_MARGIN = 80
 const TRAVEL_MARGIN_SHARE = 0.06
 const TRAVEL_MARGIN_FLOOR = 24
@@ -219,13 +228,23 @@ const travelMargin = (axisSize) =>
       axisSize * TRAVEL_MARGIN_SHARE,
     ),
   )
-const INK_SLACK = 4
+// The only thing left between the drawn digits and an edge once a leg has landed them
+// flush on it: glyph ink that spills past the row's own layout box in script faces,
+// plus a hair for antialiasing at the boundary. Measured off the real laid-out row,
+// ink alone is enough — so this is what an edge costs while the row's own box is known.
+const INK_SLACK = 1
+// What an edge costs while it is not: until the row reports a box for the current font
+// + string, the walls can only sit on the probe's advance metrics, and that estimate is
+// exactly what the old, permanent 4dp gap used to cover. Paying it again for those few
+// renders keeps a real row wider than its advance box from starting the minute — or the
+// daily font swap — with an edge already crossed.
+const UNKNOWN_EXTENT_SLACK = 4
 
-// How far the clock moves per tick (one tick per second). A third of a dp keeps the
-// drift below the threshold where the eye tracks it as movement — the digits read as
-// resting in place while the composition slowly rearranges itself. Both axes use it,
-// so the path stays diagonal however long each leg takes.
-const DRIFT_STEP = 1 / 3
+// A laid-out row whose reported box differs from the last one kept by no more than
+// this is treated as unchanged. Yoga can hand back a hair-width difference for the very
+// same text, and a state write per report would re-render every second forever; half a
+// dp is far below anything visible and well above that noise.
+const ROW_LAYOUT_EPS = 0.5
 
 // The digits are measured once per font + time string at this small size. Text
 // metrics scale linearly with font size, so one measurement gives exactly the
@@ -379,11 +398,17 @@ function App() {
 
   const [currentText, setCurrentText] = useState('')
 
-  const [xStep, setXStep] = useState(DRIFT_STEP)
-  const [yStep, setYStep] = useState(DRIFT_STEP)
-
-  const [xShift, setXShift] = useState(0)
-  const [yShift, setYShift] = useState(0)
+  // The clock's motion in one piece: where the row sits inside its walls and the unit
+  // direction it is travelling in. One state rather than a step and a shift per axis,
+  // because a bounce changes position and heading together — as four independent values
+  // they could disagree about which leg the clock is on. The speed lives in DRIFT_STEP,
+  // so this vector stays unit length and only its angle carries information.
+  const [motion, setMotion] = useState({
+    x: 0,
+    y: 0,
+    ux: Math.SQRT1_2,
+    uy: Math.SQRT1_2,
+  })
 
   const [hoursSounds, setHoursSounds] = useState()
   const [minutesSounds, setMinutesSounds] = useState()
@@ -535,6 +560,32 @@ function App() {
     })
   }
 
+  // What the clock row actually occupies, as Yoga reports it after laying the three
+  // pieces out. The walls are set from this rather than from the probe's advance box,
+  // because a laid-out row can come out wider than that box and nothing should bounce
+  // off a wall smaller than what is drawn. Keyed to font + time string exactly like the
+  // metrics: a report from a face or a string no longer on screen says nothing about the
+  // current one, so it is dropped rather than trusted.
+  const [rowExtent, setRowExtent] = useState(null)
+
+  const onLayoutClockRow = ({ nativeEvent }) => {
+    const laid = nativeEvent.layout
+    if (!Number.isFinite(laid.width) || !Number.isFinite(laid.height)) return
+    if (laid.width <= 0 || laid.height <= 0) return
+    // Only a real change writes state, so layout churn cannot loop back into itself.
+    // Nothing here feeds the font size — that stays a pure function of the probe — which
+    // is what keeps layout and fitting from becoming mutually recursive.
+    if (
+      rowExtent &&
+      rowExtent.key === metricsKey &&
+      Math.abs(rowExtent.width - laid.width) <= ROW_LAYOUT_EPS &&
+      Math.abs(rowExtent.height - laid.height) <= ROW_LAYOUT_EPS
+    ) {
+      return
+    }
+    setRowExtent({ key: metricsKey, width: laid.width, height: laid.height })
+  }
+
   // The widest pair the seconds can ever show, measured once per font. The chip is a
   // fixed box on purpose: most of these faces have proportional digits, so a box that
   // hugs "07" and then "48" visibly twitches on every tick. Measuring "88" instead of
@@ -628,16 +679,31 @@ function App() {
     flexShrink: 0,
   }
 
-  // How far from centre each axis may drift before its wall: half the free
-  // space in the motion box, less the ink slack. Computed on every render and
-  // shared by the bounce in the clock effect and the placement in the clock
-  // screen, so a digit box that grew since the last tick — a longer time
-  // string, the daily font swap — can never leave a stale shift drawn past an
-  // edge while waiting for that tick.
-  const xRange = Math.max(0, (motionBox.width - digitWidth) / 2 - INK_SLACK)
-  const yRange = Math.max(0, (motionBox.height - digitHeight) / 2 - INK_SLACK)
-  const clampedXShift = Math.max(-xRange, Math.min(xRange, xShift))
-  const clampedYShift = Math.max(-yRange, Math.min(yRange, yShift))
+  // How far from centre each axis may drift before its wall: half the free space in
+  // the motion box, less the ink slack. Computed on every render and shared by the
+  // bounce in the clock effect and the placement in the clock screen, so a box that
+  // grew since the last tick — a longer time string, the daily font swap — can never
+  // leave a stale shift drawn past an edge while waiting for that tick. The extent is
+  // the larger of the nominal metrics box and what the row itself reported: walls may
+  // follow what is really on screen, but a row Yoga made narrower than its advance box
+  // cannot claim room it was never given. Fitting stays upstream of all this — the font
+  // size comes from the probe alone — so measuring the result can never chase it.
+  const rowExtentKnown = !!rowExtent && rowExtent.key === metricsKey
+  const laidOutWidth = rowExtentKnown ? rowExtent.width : 0
+  const laidOutHeight = rowExtentKnown ? rowExtent.height : 0
+  const drawnExtent = {
+    width: Math.max(digitWidth, laidOutWidth),
+    height: Math.max(digitHeight, laidOutHeight),
+  }
+  // Only a matching report makes the extent real; until it arrives, the walls are the
+  // nominal probe box and the edge pays for what that estimate may have missed.
+  const { x: xRange, y: yRange } = motionRanges(
+    motionBox,
+    drawnExtent,
+    rowExtentKnown ? INK_SLACK : UNKNOWN_EXTENT_SLACK,
+  )
+  const clampedXShift = Math.max(-xRange, Math.min(xRange, motion.x))
+  const clampedYShift = Math.max(-yRange, Math.min(yRange, motion.y))
 
   const initChimingTime = async () => {
     setChimingTimeRange(
@@ -760,24 +826,14 @@ function App() {
   useEffect(() => {
     const minute = dayjs(currentTime).minute()
 
-    // Bounce off the walls: step first, then clamp at the wall and reverse.
-    // Clamping makes overshoot impossible, so a shift is never stored past
-    // its wall, and one left outside a range that shrank mid-flight (a new
-    // font or time string) is pulled back inside here. The axes share one
-    // speed, so the drift stays diagonal and sweeps the corners between its
-    // wall hits. xRange/yRange come from the render scope, where they clamp
-    // placement too — the walls and the drawing cannot disagree.
-    const nextShift = (shift, step, range) => {
-      if (shift + step >= range) return [-DRIFT_STEP, range]
-      if (shift + step <= -range) return [DRIFT_STEP, -range]
-      return [step, shift + step]
-    }
-    const [nextXStep, nextXShift] = nextShift(xShift, xStep, xRange)
-    const [nextYStep, nextYShift] = nextShift(yShift, yStep, yRange)
-    setXStep(nextXStep)
-    setYStep(nextYStep)
-    setXShift(nextXShift)
-    setYShift(nextYShift)
+    // One tick of travel: step, land exactly on any wall the leg reaches, and leave it
+    // at a fresh random angle pointing away from the walls just touched (clockMotion
+    // owns the maths). The walls are read from the render scope, where they also clamp
+    // placement, so the bounce and the drawing cannot disagree. Math.random is handed in
+    // rather than read inside the module — that is what makes the whole path testable.
+    setMotion((prev) =>
+      advanceMotion(prev, { x: xRange, y: yRange }, Math.random),
+    )
 
     if (currentMinute !== minute) {
       setCurrentMinute(minute)
@@ -1331,13 +1387,14 @@ function App() {
         {'88'}
       </Text>
       {/* The digits live in one box placed exactly where the single Text used to
-          go and sized from the measured line, so the centring and the travel walls
-          are unchanged. Inside it the separator is its own Animated.Text — nested
-          Text children cannot carry an animated opacity — and the optional seconds
-          sit at the bottom-right in a fixed-size chip with a half-transparent fill,
-          lifted up onto the digits' baseline so they hug the text and stay readable
-          where they overlap a digit. This lets them drift with the digits for free
-          and keeps them out of the measurement that sets the size.
+          go and sized from the measured line, so the centring is unchanged; the
+          travel walls come from the row inside it rather than from this box, which
+          only knows what the probe measured. Inside it the separator is its own
+          Animated.Text — nested Text children cannot carry an animated opacity — and
+          the optional seconds sit at the bottom-right in a fixed-size chip with a
+          half-transparent fill, lifted up onto the digits' baseline so they hug the
+          text and stay readable where they overlap a digit. This lets them drift with
+          the digits for free and keeps them out of the measurement that sets the size.
           flexShrink 0 stops Yoga from shaving a piece off the row if splitting it
           renders a hair wider than the measured advance; numberOfLines stays the
           wrap backstop, and justifyContent keeps the row centred on the same point
@@ -1353,11 +1410,18 @@ function App() {
           height: digitHeight,
         }}
       >
+        {/* The row reports its own laid-out box, and that is what the walls are set
+            from. alignSelf keeps it hugging its content instead of stretching to the
+            outer box — a stretched row would only echo that box back — while staying
+            centred on the same point, so the shift the walls allow and the ink that
+            sits at either end of it still describe the same rectangle. */}
         <View
+          onLayout={onLayoutClockRow}
           style={{
             flexDirection: 'row',
             justifyContent: 'center',
             alignItems: 'baseline',
+            alignSelf: 'center',
           }}
         >
           <Text numberOfLines={1} style={[digitTextStyle, { flexShrink: 0 }]}>
