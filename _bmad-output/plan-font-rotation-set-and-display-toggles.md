@@ -3,7 +3,7 @@ title: 'Rotate the clock through a chosen set of fonts, plus tiny seconds and a 
 type: 'feature'
 ticket: ''
 created: '2026-11-25'
-status: 'in-review'
+status: 'built'
 baseline_revision: '9e609a3a9956a24c4bfdc891b288eedd69a32a30'
 route: 'full'
 route_source: 'auto'
@@ -140,6 +140,8 @@ Re-verified after these edits: eslint exit 0, prettier clean, `npx jest` 20/20, 
 ## Plan Change Log
 
 ## Review Triage Log
+
+- Closed as `built` by the human on 2026-11-25 without a lens pass: the change was already committed (`0f48f84`, plus the version bump in `5961006`), and the human chose to ship it rather than wait for the Quick lens written out at `plan-font-rotation-set-and-display-toggles.quick-lens-prompt.md`. No findings were ever received, so none were triaged; `lenses_ran` stays empty. Five cosmetic follow-ups requested after the review snapshot (smaller seconds, slower drift, prominent CTA, baseline-anchored seconds, fixed-size semi-transparent seconds chip) shipped in the same commit and were never reviewed either.
 
 ## Design Notes
 
