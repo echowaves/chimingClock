@@ -1,0 +1,60 @@
+{
+  "generation_hash": "99027b2f97becef419ca",
+  "inputs": {
+    "jinja2_version": "3.1.6",
+    "project_root": "/Users/dmitry/hacks/chimingClock",
+    "renderer_sha256": "82b4d567c335a596d086d94b4772d0a4a9e09065f84b45c3647276593d02552c",
+    "resolved_values": {
+      "config.core.output_folder": "/Users/dmitry/hacks/chimingClock/_bmad-output",
+      "customization.workflow.activation_steps_append": [],
+      "customization.workflow.activation_steps_prepend": [],
+      "customization.workflow.implementation_handoff": "Launch a subagent with no prior conversation context, with this prompt:\n\n> Read {plan_file} fully and implement it — the plan is the sole source of truth. Load every file listed in its frontmatter `context:` before you start.\n>\n> When done, report what you changed, how you verified it, and anything left incomplete or risky.\n",
+      "customization.workflow.on_complete": "",
+      "customization.workflow.open_plan": "",
+      "customization.workflow.persistent_facts": [],
+      "customization.workflow.quick_lenses": [
+        {
+          "id": "quick",
+          "instruction": "Launch a context-free subagent with this prompt:\n\nRead `{plan_file}` — the plan holding the acceptance criteria and intent — and the files its frontmatter `context:` lists. Read the agent instruction files (`AGENTS.md`, `CLAUDE.md`, or equivalents) at the repository root and in the directories the diff touches; those are the rules. Then read the unified diff at `{diff_file}` — it is the change under review.\n\nReport unmet acceptance criteria, broken rules, and bugs. Each finding: the location, what goes wrong, and evidence checked against the surrounding code. Output a Markdown list of findings only — no severity, priority, or ranking.\n\nReview by inspection only. Do not modify code, run builds or tests, or invoke quality gates. Do not invoke any skill, and do not spawn subagents of your own — you are the reviewer. Return your findings as text in your final message; do not route them through any findings-reporting tool the host may offer.\n\n",
+          "name": "Quick"
+        }
+      ],
+      "customization.workflow.review": "quick",
+      "customization.workflow.route": "full",
+      "initiative_folder": "/Users/dmitry/hacks/chimingClock/_bmad-output"
+    },
+    "skill_root": "/Users/dmitry/hacks/chimingClock/.agents/skills/bmad-build",
+    "source_sha256": {
+      "plan-template.md": "d8b2b886839573c30b5cab5fc256fd8a3050ddb9ab64117b5651dce2406e2077",
+      "references/claims-check.md": "6cb20a86d819b95272876bca0dffef59ca07ba6a373d804295066751043867c0",
+      "references/deletion-check.md": "0f1f124e4e957147e89164a272b10bedc694ad0d9ad2618c8610ac74ee9cb0da",
+      "review-prompts/edge-case-hunter.md": "b909fe0ec8e4daaf2550d0ec783618c5146261d0dbc0e054698ce00d0905a3d1",
+      "review-prompts/verification-gap.md": "859930110817293bf9d25bd6df093f094cdc50fe6b8359e3720aee6dba96e17a",
+      "step-01-clarify-and-route.md": "abf395fb9cb3fd07c635622522bb1f6d59041eabd0dc7be79078cb759aef11da",
+      "step-02-plan.md": "44a0242450a0f316756d0f9abc6dbde6473e5f05742c9d97cf12531679693991",
+      "step-03-implement.md": "df1a0f8a8fdb524581d371505a12a33a25d5150ecb442a58a9d8145d2b284954",
+      "step-04-review.md": "5e2e3b5bd166bf8fa835a21ba27b147cf4c6373fbf2b712a4c251968f3805169",
+      "step-05-present.md": "8c3a4f5e627524b05c3f1db4850b6ab68ae6930d8046c340a3e1590dccc4ed61",
+      "step-oneshot.md": "1313ccda88e42fc813ed585bd2f3794480c33cb40dea674cb45ca860310dbf9e",
+      "workflow.md": "a4a1fed8a1d374b5ff8ac5613211a2e31d7e89743d1b153348ae6fe9ce36ec80"
+    }
+  },
+  "outputs": {
+    "plan-template.md": "d8b2b886839573c30b5cab5fc256fd8a3050ddb9ab64117b5651dce2406e2077",
+    "references/claims-check.md": "6cb20a86d819b95272876bca0dffef59ca07ba6a373d804295066751043867c0",
+    "references/deletion-check.md": "0f1f124e4e957147e89164a272b10bedc694ad0d9ad2618c8610ac74ee9cb0da",
+    "review-prompts/edge-case-hunter.md": "b909fe0ec8e4daaf2550d0ec783618c5146261d0dbc0e054698ce00d0905a3d1",
+    "review-prompts/verification-gap.md": "859930110817293bf9d25bd6df093f094cdc50fe6b8359e3720aee6dba96e17a",
+    "step-01-clarify-and-route.md": "503ca20e4df2f26492963d9f5a55a4efc71aebc566cf1b031f89c7d367336535",
+    "step-02-plan.md": "e10e44ed281c0d9133854810606a0d31f9bca657fee4486e985ed8eaa66ca364",
+    "step-03-implement.md": "f6d47ba37c043292c61f92a6b4649f996e8acc3412f39d66aef6f6e55a562264",
+    "step-04-review.md": "6a9f1b6d4c91d1e02e342b4c00470e542c30461fbc9a03494d5da1fd762ba7e5",
+    "step-05-present.md": "edda56d0325a599734fef653501c2e56cd45ace615343113768b6a3f4f1b3540",
+    "workflow.md": "2869ebcea7c073b3bd3b366de906d6d3c95e8a3edbde611440d6d03ade5991d7"
+  },
+  "project_root": "/Users/dmitry/hacks/chimingClock",
+  "project_slug": "chimingclock",
+  "root_hash": "dfcb2c504812",
+  "schema_version": 1,
+  "skill": "bmad-build"
+}
