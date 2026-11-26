@@ -24,3 +24,10 @@ exports.rules = {
   'import/no-unresolved': ['error', { ignore: ['^expo-', '^@expo/'] }],
 }
 exports.plugins = ['prettier']
+// Jest's globals are only in scope inside the test suite.
+exports.overrides = [
+  {
+    files: ['__tests__/**/*.js'],
+    env: { jest: true },
+  },
+]

@@ -5,6 +5,7 @@
   "packageManager": "npm@10.7.0",
   "scripts": {
     "start": "npx expo start",
+    "test": "jest",
     "startc": "npx expo start --clear",
     "clear": "npm cache clean --force",
     "reset:simulator": "xcrun simctl erase all",

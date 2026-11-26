@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Animated,
+  Easing,
   Platform,
   Pressable,
   StyleSheet,
@@ -30,9 +31,54 @@ import * as SecureStore from 'expo-secure-store'
 
 import MultiSlider from '@ptomasroos/react-native-multi-slider'
 
-const DIGIT_FONT_KEY = 'digitFont'
-const RANDOM_DAILY_KEY = 'randomDaily'
-const DEFAULT_FONT = 'default'
+import {
+  drawDailyFont,
+  isTodayPick,
+  nextSelection,
+  resolveSelectedFonts,
+  rotationPool,
+  todayKey,
+} from './fontSelection'
+
+// Preferences. `digitFonts` is the set the clock rotates through and
+// `dailyFontPick` is today's draw from it, `{ id, date }`, kept so a relaunch
+// later the same day shows the face the user already saw. The two legacy keys are
+// read once for migration and then deleted.
+const DIGIT_FONTS_KEY = 'digitFonts'
+const DAILY_PICK_KEY = 'dailyFontPick'
+const SHOW_SECONDS_KEY = 'showSeconds'
+const PULSE_SEPARATOR_KEY = 'pulseSeparator'
+const LEGACY_DIGIT_FONT_KEY = 'digitFont'
+const LEGACY_RANDOM_DAILY_KEY = 'randomDaily'
+
+// Display options. The seconds are a tenth of the digit height: deliberately small,
+// a detail rather than a competing readout, so the corner they occupy stays theirs
+// alone. The separator breathes between full opacity and a fifth of it, half a cycle
+// each way, so one breath reads as ~3s.
+const SECONDS_SCALE = 0.1
+// Only used when a platform reports no ascender metric: the share of a line box that
+// typically sits below the baseline, so the seconds still hug the text there.
+const DESCENT_FALLBACK_SHARE = 0.2
+// The corner is drawn over the digits' own box, so it can land on a minute digit —
+// and green on green simply vanishes. It carries a panel of its own instead, kept
+// half-transparent so the glyph underneath still reads through it. The alpha lives in
+// the fill, not the box's opacity, which would fade the seconds along with it.
+const SECONDS_CHIP_FILL = 'rgba(0, 0, 0, 0.5)'
+// Padding and radius are shares of the seconds' own size, so the chip keeps its shape
+// whatever size the clock is fitted to.
+const SECONDS_PAD_SHARE = 0.18
+const SECONDS_RADIUS_SHARE = 0.35
+// Only used before the seconds' probe has reported (or if a platform reports nothing):
+// roughly two digits and a line box, in shares of the seconds' font size.
+const SECONDS_FALLBACK_WIDTH_SHARE = 1.3
+const SECONDS_FALLBACK_HEIGHT_SHARE = 1.2
+const PULSE_MIN_OPACITY = 0.2
+const PULSE_HALF_PERIOD_MS = 1500
+
+// Best-effort persist: a SecureStore failure keeps the choice for this session
+// rather than throwing inside an effect.
+const persistPref = (key, value) =>
+  SecureStore.setItemAsync(key, JSON.stringify(value)).catch(() => {})
 
 // Each digit font carries the weight it wants. iOS answers a `fontFamily` request
 // with the face in that family whose weight is closest to the one asked for
@@ -42,7 +88,6 @@ const DEFAULT_FONT = 'default'
 // both of them look thin. Families without an iOS face fall back to the Android
 // family named beside them.
 const FONTS = {
-  default: { label: 'Default', weight: '600', style: {} },
   serif: {
     label: 'Serif',
     weight: '600',
@@ -132,33 +177,9 @@ const FONTS = {
   },
 }
 
-// Daily mode picks among these only, so "surprise me" never shows the default
-// look. Derived from FONTS so a font can never be in one list but not the other;
-// narrowed to the fonts this device has where that is known.
-const DAILY_FONT_POOL = Object.keys(FONTS).filter((id) => id !== DEFAULT_FONT)
-
-// Pure helpers (no state): the same local date always derives the same font id.
-const dayOfYear = (now) => now.startOf('day').diff(now.startOf('year'), 'day')
-
-const dailyFontId = (now, pool) =>
-  pool.length === 0 ? DEFAULT_FONT : pool[dayOfYear(now) % pool.length]
-
-const normalizeFontId = (id) => (FONTS[id] ? id : DEFAULT_FONT)
-
-// `availableFontIds` is the ids measured on this device, or null while that is
-// still unknown. A face the device lacks would only ever draw the system font, so
-// daily mode skips it and a stored choice of it falls back to Default — which is
-// what the digits are already showing, and keeps the highlighted button honest.
-const activeFontId = (randomDaily, digitFont, now, availableFontIds) => {
-  const pool = availableFontIds
-    ? availableFontIds.filter((id) => id !== DEFAULT_FONT)
-    : DAILY_FONT_POOL
-  const wanted =
-    randomDaily === true ? dailyFontId(now, pool) : normalizeFontId(digitFont)
-  if (availableFontIds && !availableFontIds.includes(wanted))
-    return DEFAULT_FONT
-  return normalizeFontId(wanted)
-}
+// Every face the app ships. Device availability is measured separately; this is the
+// universe a stored selection is validated against.
+const ALL_FONT_IDS = Object.keys(FONTS)
 
 // Clock-face layout. The fitting box is the motion box (the clock screen as
 // laid out, safe-area insets included) inset by a travel margin on each side,
@@ -175,8 +196,8 @@ const activeFontId = (randomDaily, digitFont, now, availableFontIds) => {
 // TRAVEL_MARGIN_FLOOR so even the smallest window still visibly moves; the
 // half-inch ceiling (80dp at the nominal 160dp per inch) only binds past
 // ~1300dp, well beyond any phone. On the axis that caps the font the drift
-// range is the margin itself, so a wall arrives every twenty-odd seconds at
-// 1dp per second; the roomier axis sweeps far longer — its range comes from
+// range is the margin itself, so a wall arrives every two-odd minutes at
+// DRIFT_STEP per second; the roomier axis sweeps far longer — its range comes from
 // the digit box, not the margin. Calm either way, and every edge is hit.
 const EDGE_TRAVEL_MARGIN = 80
 const TRAVEL_MARGIN_SHARE = 0.06
@@ -194,6 +215,12 @@ const travelMargin = (axisSize) =>
     ),
   )
 const INK_SLACK = 4
+
+// How far the clock moves per tick (one tick per second). A third of a dp keeps the
+// drift below the threshold where the eye tracks it as movement — the digits read as
+// resting in place while the composition slowly rearranges itself. Both axes use it,
+// so the path stays diagonal however long each leg takes.
+const DRIFT_STEP = 1 / 3
 
 // The digits are measured once per font + time string at this small size. Text
 // metrics scale linearly with font size, so one measurement gives exactly the
@@ -269,13 +296,8 @@ const isDefaultFamilyFont = (id) =>
   (DEFAULT_FAMILY_FONT_IDS[Platform.OS] || []).includes(id)
 
 // Measured ids and declared ones, computed once: the platform never changes mid-run.
-const ALL_NON_DEFAULT_FONT_IDS = Object.keys(FONTS).filter(
-  (id) => id !== DEFAULT_FONT,
-)
-const MEASURED_FONT_IDS = ALL_NON_DEFAULT_FONT_IDS.filter(
-  (id) => !isDefaultFamilyFont(id),
-)
-const DECLARED_FONT_IDS = ALL_NON_DEFAULT_FONT_IDS.filter(isDefaultFamilyFont)
+const MEASURED_FONT_IDS = ALL_FONT_IDS.filter((id) => !isDefaultFamilyFont(id))
+const DECLARED_FONT_IDS = ALL_FONT_IDS.filter(isDefaultFamilyFont)
 
 const fontProbeKey = (id) => id
 const systemProbeKey = (weight) => `system:${weight}`
@@ -352,8 +374,8 @@ function App() {
 
   const [currentText, setCurrentText] = useState('')
 
-  const [xStep, setXStep] = useState(1)
-  const [yStep, setYStep] = useState(1)
+  const [xStep, setXStep] = useState(DRIFT_STEP)
+  const [yStep, setYStep] = useState(DRIFT_STEP)
 
   const [xShift, setXShift] = useState(0)
   const [yShift, setYShift] = useState(0)
@@ -370,9 +392,13 @@ function App() {
   const CHIMING_TIME_RANGE = 'chimingTimeRange'
   const [chimingTimeRange, setChimingTimeRange] = useState(null)
 
-  // null means "not loaded from SecureStore yet"; renders fall back to default.
-  const [digitFont, setDigitFont] = useState(null)
-  const [randomDaily, setRandomDaily] = useState(null)
+  // null means "not loaded from SecureStore yet"; renders fall back to the pool of
+  // every font this device offers.
+  const [digitFonts, setDigitFonts] = useState(null)
+  // Today's draw as `{ id, date }`; null until loaded or drawn.
+  const [dailyPick, setDailyPick] = useState(null)
+  const [showSeconds, setShowSeconds] = useState(null)
+  const [pulseSeparator, setPulseSeparator] = useState(null)
   // Until the prefs load finishes, the font controls are shown but inert, so a
   // early tap can't be clobbered by (or clobber) the values init is reading.
   const [fontPrefsLoaded, setFontPrefsLoaded] = useState(false)
@@ -417,9 +443,6 @@ function App() {
     )
     if (outstanding) return null
     return [
-      // The default asks for no family, so it is the system font by definition and
-      // always available.
-      DEFAULT_FONT,
       ...DECLARED_FONT_IDS,
       ...MEASURED_FONT_IDS.filter((id) =>
         fontMetricsDiffer(
@@ -431,23 +454,42 @@ function App() {
   }, [fontProbeMetrics])
 
   const offeredFontIds = availableFontIds
-    ? Object.keys(FONTS).filter((id) => availableFontIds.includes(id))
-    : Object.keys(FONTS)
+    ? ALL_FONT_IDS.filter((id) => availableFontIds.includes(id))
+    : ALL_FONT_IDS
 
-  // Recomputed on each render (the clock ticks every second), so a new local
-  // date picks up the new daily font without extra state or timers.
-  const currentFontId = activeFontId(
-    randomDaily,
-    digitFont,
-    currentTime,
-    availableFontIds,
-  )
+  // What the clock may draw, and what the picker shows as selected: the saved set
+  // narrowed to this device, or every offered face when nothing valid is saved. A
+  // single entry means that font always; several rotate at local midnight.
+  const activePool = rotationPool(digitFonts, offeredFontIds)
+
+  // Tapping off the last remaining face is refused rather than emptying the pool —
+  // an empty selection has no honest rendering. Adding a face keeps `FONTS` order,
+  // because `rotationPool` intersects over the offered list.
+  const toggleFont = (id) => setDigitFonts(nextSelection(activePool, id))
+
+  // Today's face, taken from the stored pick so a relaunch inside the same day
+  // redraws what the user already saw. Until today's draw lands — first render, or
+  // a selection that just changed — the pool's first entry draws, which keeps every
+  // `FONTS` lookup honest without a second source of truth.
+  let currentFontId = activePool.length > 0 ? activePool[0] : ALL_FONT_IDS[0]
+  if (isTodayPick(dailyPick, currentTime) && activePool.includes(dailyPick.id))
+    currentFontId = dailyPick.id
 
   // The font family and weight only; each user sets its own size.
   const fontSpecs = {
     fontWeight: FONTS[currentFontId].weight,
     ...FONTS[currentFontId].style,
   }
+
+  // The separator needs its own element to breathe on its own, because nested Text
+  // children cannot carry an Animated style. It stays at full opacity unless the
+  // loop below is running.
+  const separatorPulse = useRef(new Animated.Value(1)).current
+
+  // Split out of the very string the hidden probe measures, so the fitted size and
+  // the travel walls stay derived from the whole `h:mm`.
+  const [hoursText, minutesText] = currentText.split(':')
+  const secondsText = currentTime.format('ss')
 
   // The digits' natural box at MEASURE_SIZE, as the probe below reports it; null
   // until the first measurement arrives. Only the font and the time string affect
@@ -462,7 +504,40 @@ function App() {
     if (!line || !line.width || !line.height) return
     if (!Number.isFinite(line.width) || !Number.isFinite(line.height)) return
     if (digitMetrics && digitMetrics.key === metricsKey) return
-    setDigitMetrics({ key: metricsKey, width: line.width, height: line.height })
+    // `ascender` is the distance from the top of the line box down to the baseline,
+    // which is what puts the seconds on the baseline rather than on the box floor.
+    // A font that reports it outside its own line box is treated as not reporting
+    // it at all, so the seconds fall back to the usual share instead of flying to
+    // the top of the digits.
+    setDigitMetrics({
+      key: metricsKey,
+      width: line.width,
+      height: line.height,
+      ascender:
+        Number.isFinite(line.ascender) &&
+        line.ascender > 0 &&
+        line.ascender < line.height
+          ? line.ascender
+          : null,
+    })
+  }
+
+  // The widest pair the seconds can ever show, measured once per font. The chip is a
+  // fixed box on purpose: most of these faces have proportional digits, so a box that
+  // hugs "07" and then "48" visibly twitches on every tick. Measuring "88" instead of
+  // the current second fits any face and never moves while the clock runs.
+  const [secondsMetrics, setSecondsMetrics] = useState(null)
+
+  const onMeasureSeconds = ({ nativeEvent }) => {
+    const [line] = nativeEvent.lines
+    if (!line || !Number.isFinite(line.width) || !Number.isFinite(line.height))
+      return
+    if (secondsMetrics && secondsMetrics.key === currentFontId) return
+    setSecondsMetrics({
+      key: currentFontId,
+      width: line.width,
+      height: line.height,
+    })
   }
 
   // Line width and height both scale linearly with font size, so the measurement
@@ -489,6 +564,57 @@ function App() {
     ? digitMetrics.height * digitScale
     : fitHeight
 
+  // Shared by the three pieces of the clock row and the seconds overlay, so every
+  // glyph on screen carries one colour and one font spec.
+  const digitTextStyle = {
+    ...fontSpecs,
+    fontSize: digitFontSize,
+    color: '#d0fcc5',
+  }
+
+  // How far the seconds sit up from the bottom of the box. The box is a whole line
+  // box, and its floor is below the baseline by the font's descent — a fifth of a
+  // 190dp face or more, which reads as the seconds floating away under the text.
+  // Lifting them by that descent puts their floor on the baseline, hard against the
+  // text (which is why they need the chip below), and the probe gives the real
+  // ascender for the font actually drawing rather than a guess.
+  const secondsBottomInset =
+    digitMetrics && Number.isFinite(digitMetrics.ascender)
+      ? Math.max(0, (digitMetrics.height - digitMetrics.ascender) * digitScale)
+      : digitHeight * DESCENT_FALLBACK_SHARE
+
+  // The chip the seconds are drawn in: a fixed box, so it never resizes with the
+  // second being shown. Their corner of the digits' box can land on a minute glyph,
+  // and the black fill is what keeps them readable there. Because the glyphs sit
+  // centred in a box padded equally top and bottom, their line-box floor lands on the
+  // digits' baseline when the chip's own bottom sits one pad below it.
+  const secondsFontSize = digitFontSize * SECONDS_SCALE
+  const secondsScale = secondsFontSize / MEASURE_SIZE
+  const secondsPad = secondsFontSize * SECONDS_PAD_SHARE
+  const secondsChipStyle = {
+    position: 'absolute',
+    right: 0,
+    bottom: Math.max(0, secondsBottomInset - secondsPad * 0.5),
+    width: secondsMetrics
+      ? secondsMetrics.width * secondsScale + secondsPad * 2
+      : secondsFontSize * SECONDS_FALLBACK_WIDTH_SHARE + secondsPad * 2,
+    height: secondsMetrics
+      ? secondsMetrics.height * secondsScale + secondsPad
+      : secondsFontSize * SECONDS_FALLBACK_HEIGHT_SHARE + secondsPad,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: SECONDS_CHIP_FILL,
+    borderRadius: secondsFontSize * SECONDS_RADIUS_SHARE,
+  }
+
+  const secondsTextStyle = {
+    ...digitTextStyle,
+    fontSize: secondsFontSize,
+    // The box is sized from the widest pair, so this row never needs to give any of
+    // its width away; shrinking it would ellipsize a second instead of overflowing.
+    flexShrink: 0,
+  }
+
   // How far from centre each axis may drift before its wall: half the free
   // space in the motion box, less the ink slack. Computed on every render and
   // shared by the bounce in the clock effect and the placement in the clock
@@ -511,17 +637,46 @@ function App() {
 
   const initDigitFontPrefs = async () => {
     // Only successful reads write state. A corrupt or unreadable stored value
-    // leaves prefs null (renders as default) and is never written back over,
-    // so a transient SecureStore failure can't destroy intact prefs.
+    // leaves prefs null (renders as every offered font) and is never written back
+    // over, so a transient SecureStore failure can't destroy intact prefs.
     try {
-      const storedFont = JSON.parse(
-        await SecureStore.getItemAsync(DIGIT_FONT_KEY),
+      // The saved set wins; a single legacy face becomes a one-element set; a value
+      // the app no longer ships — the old "default" included — is dropped, and an
+      // install with nothing usable starts on every font it offers.
+      setDigitFonts(
+        resolveSelectedFonts({
+          saved: JSON.parse(await SecureStore.getItemAsync(DIGIT_FONTS_KEY)),
+          legacyFontId: JSON.parse(
+            await SecureStore.getItemAsync(LEGACY_DIGIT_FONT_KEY),
+          ),
+          allIds: ALL_FONT_IDS,
+        }),
       )
-      setDigitFont(normalizeFontId(storedFont))
 
-      const storedRandomDaily =
-        JSON.parse(await SecureStore.getItemAsync(RANDOM_DAILY_KEY)) === true
-      setRandomDaily(storedRandomDaily)
+      const savedPick = JSON.parse(
+        await SecureStore.getItemAsync(DAILY_PICK_KEY),
+      )
+      // Whether that pick is still today's, and still selectable, belongs to the
+      // effect that owns drawing; here it only has to be well-formed.
+      if (
+        savedPick &&
+        typeof savedPick.date === 'string' &&
+        FONTS[savedPick.id]
+      )
+        setDailyPick(savedPick)
+
+      setShowSeconds(
+        JSON.parse(await SecureStore.getItemAsync(SHOW_SECONDS_KEY)) === true,
+      )
+      setPulseSeparator(
+        JSON.parse(await SecureStore.getItemAsync(PULSE_SEPARATOR_KEY)) ===
+          true,
+      )
+
+      // Both legacy keys are gone from the app: drop them so an upgrade leaves no
+      // dead values behind.
+      SecureStore.deleteItemAsync(LEGACY_DIGIT_FONT_KEY).catch(() => {})
+      SecureStore.deleteItemAsync(LEGACY_RANDOM_DAILY_KEY).catch(() => {})
     } catch {
       // treat as unset; save-effect guards skip persisting while null
     } finally {
@@ -585,8 +740,8 @@ function App() {
     // wall hits. xRange/yRange come from the render scope, where they clamp
     // placement too — the walls and the drawing cannot disagree.
     const nextShift = (shift, step, range) => {
-      if (shift + step >= range) return [-1, range]
-      if (shift + step <= -range) return [1, -range]
+      if (shift + step >= range) return [-DRIFT_STEP, range]
+      if (shift + step <= -range) return [DRIFT_STEP, -range]
       return [step, shift + step]
     }
     const [nextXStep, nextXShift] = nextShift(xShift, xStep, xRange)
@@ -602,6 +757,53 @@ function App() {
       setCurrentText(text)
     }
   }, [currentTime])
+
+  // One face per local day, never the one the day before showed. Runs on every tick
+  // so midnight is caught while the app stays open, and whenever the selection or
+  // the device's font list settles; the guard makes all other ticks a no-op. A
+  // selection that no longer contains today's face redraws at once, so the drawn
+  // font is always one the picker offers as selected.
+  useEffect(() => {
+    if (!digitFonts) return
+    const pool = rotationPool(digitFonts, offeredFontIds)
+    if (pool.length === 0) return
+    if (isTodayPick(dailyPick, currentTime) && pool.includes(dailyPick.id))
+      return
+    setDailyPick({
+      id: drawDailyFont(pool, dailyPick ? dailyPick.id : null),
+      date: todayKey(currentTime),
+    })
+  }, [currentTime, digitFonts, offeredFontIds, dailyPick])
+
+  // The separator's breath: half a cycle down to PULSE_MIN_OPACITY, half back up,
+  // entirely on the native thread so the fade costs no re-render. It runs only while
+  // the clock is actually showing and the option is on — otherwise the value is put
+  // back at full opacity, so switching it off leaves a steady colon rather than
+  // freezing mid-breath or animating an unmounted view.
+  useEffect(() => {
+    if (pulseSeparator !== true || firstScreen) {
+      separatorPulse.setValue(1)
+      return undefined
+    }
+    const breath = Animated.loop(
+      Animated.sequence([
+        Animated.timing(separatorPulse, {
+          toValue: PULSE_MIN_OPACITY,
+          duration: PULSE_HALF_PERIOD_MS,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(separatorPulse, {
+          toValue: 1,
+          duration: PULSE_HALF_PERIOD_MS,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    )
+    breath.start()
+    return () => breath.stop()
+  }, [pulseSeparator, firstScreen, separatorPulse])
 
   const isSoundEnabled = () => {
     const currentHour = dayjs(currentTime).hour()
@@ -631,25 +833,21 @@ function App() {
   }, [chimingTimeRange])
 
   useEffect(() => {
-    if (digitFont) {
-      SecureStore.setItemAsync(DIGIT_FONT_KEY, JSON.stringify(digitFont)).catch(
-        () => {
-          // best-effort persist: keep the choice for this session on failure
-        },
-      )
-    }
-  }, [digitFont])
+    if (digitFonts) persistPref(DIGIT_FONTS_KEY, digitFonts)
+  }, [digitFonts])
 
   useEffect(() => {
-    if (randomDaily !== null) {
-      SecureStore.setItemAsync(
-        RANDOM_DAILY_KEY,
-        JSON.stringify(randomDaily),
-      ).catch(() => {
-        // best-effort persist: keep the choice for this session on failure
-      })
-    }
-  }, [randomDaily])
+    if (dailyPick) persistPref(DAILY_PICK_KEY, dailyPick)
+  }, [dailyPick])
+
+  useEffect(() => {
+    if (showSeconds !== null) persistPref(SHOW_SECONDS_KEY, showSeconds)
+  }, [showSeconds])
+
+  useEffect(() => {
+    if (pulseSeparator !== null)
+      persistPref(PULSE_SEPARATOR_KEY, pulseSeparator)
+  }, [pulseSeparator])
 
   // The hour and minute are the quarter's own, so a chime that lands late still
   // sounds the bell for the hour it is announcing.
@@ -845,24 +1043,29 @@ function App() {
           {/* First of the two settings groups on purpose: this is how the user
               leaves the screen, and it must not sit behind everything they may
               have to scroll past. */}
+          {/* The one action on this screen, so it is the only thing wearing the
+              clock's own colour: everything else is black-on-white, and this is
+              white-on-clock-green, larger than any other control, and lifted. The
+              hairline keeps the green defined against a white background instead of
+              glowing into it. */}
           <Pressable
             onPress={() => setFirstScreen(false)}
             style={{
               alignSelf: 'center',
-              // width: '90%', // Change width to '100%'
-
               alignItems: 'center',
-              // justifyContent: 'center',
-              paddingVertical: 20,
-              paddingHorizontal: 32,
-              borderRadius: 10,
-              elevation: 5,
-              backgroundColor: 'black',
+              marginVertical: 16,
+              paddingVertical: 26,
+              paddingHorizontal: 52,
+              borderRadius: 16,
+              elevation: 12,
+              borderWidth: 1,
+              borderColor: '#080E1D',
+              backgroundColor: '#d0fcc5',
             }}
           >
-            <Text style={{ fontWeight: '600', fontSize: 20, color: 'white' }}>
-              {`Show the clock`}
-            </Text>
+            <Text
+              style={{ fontWeight: '800', fontSize: 26, color: '#080E1D' }}
+            >{`Show the clock`}</Text>
           </Pressable>
 
           <View
@@ -884,7 +1087,7 @@ function App() {
                 fontWeight: '600',
               }}
             >
-              Digit font
+              Digit fonts
             </Text>
             <View
               style={{
@@ -896,10 +1099,7 @@ function App() {
               {offeredFontIds.map((id) => (
                 <Pressable
                   key={id}
-                  onPress={() => {
-                    setDigitFont(id)
-                    setRandomDaily(false)
-                  }}
+                  onPress={() => toggleFont(id)}
                   style={{
                     paddingVertical: 8,
                     paddingHorizontal: 14,
@@ -908,7 +1108,9 @@ function App() {
                     elevation: 5,
                     borderWidth: 1,
                     borderColor: 'black',
-                    backgroundColor: id === currentFontId ? 'black' : 'white',
+                    backgroundColor: activePool.includes(id)
+                      ? 'black'
+                      : 'white',
                   }}
                 >
                   <Text
@@ -916,7 +1118,7 @@ function App() {
                       fontWeight: FONTS[id].weight,
                       ...FONTS[id].style,
                       fontSize: 16,
-                      color: id === currentFontId ? 'white' : 'black',
+                      color: activePool.includes(id) ? 'white' : 'black',
                     }}
                   >
                     {FONTS[id].label}
@@ -924,29 +1126,67 @@ function App() {
                 </Pressable>
               ))}
             </View>
-            <Pressable
-              onPress={() => setRandomDaily(randomDaily !== true)}
+            {/* Says what the selection actually does, so the rotation is never a
+                surprise and tapping the last face off (which does nothing) has an
+                explanation next to it. */}
+            <Text
               style={{
-                marginTop: 12,
-                paddingVertical: 10,
-                paddingHorizontal: 20,
-                borderRadius: 10,
-                elevation: 5,
-                borderWidth: 1,
-                borderColor: 'black',
-                backgroundColor: randomDaily === true ? 'black' : 'white',
+                paddingTop: 4,
+                fontSize: 14,
+                textAlign: 'center',
+                color: '#444444',
               }}
             >
-              <Text
-                style={{
-                  fontWeight: '600',
-                  fontSize: 16,
-                  color: randomDaily === true ? 'white' : 'black',
-                }}
-              >
-                {`Surprise me daily: ${randomDaily === true ? 'On' : 'Off'}`}
-              </Text>
-            </Pressable>
+              {activePool.length > 1
+                ? `rotates daily through ${activePool.length} selected`
+                : 'always this font'}
+            </Text>
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+                marginTop: 12,
+              }}
+            >
+              {[
+                {
+                  label: 'Show seconds',
+                  value: showSeconds === true,
+                  onToggle: () => setShowSeconds(showSeconds !== true),
+                },
+                {
+                  label: 'Pulsing separator',
+                  value: pulseSeparator === true,
+                  onToggle: () => setPulseSeparator(pulseSeparator !== true),
+                },
+              ].map(({ label, value, onToggle }) => (
+                <Pressable
+                  key={label}
+                  onPress={onToggle}
+                  style={{
+                    margin: 4,
+                    paddingVertical: 10,
+                    paddingHorizontal: 20,
+                    borderRadius: 10,
+                    elevation: 5,
+                    borderWidth: 1,
+                    borderColor: 'black',
+                    backgroundColor: value ? 'black' : 'white',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontWeight: '600',
+                      fontSize: 16,
+                      color: value ? 'white' : 'black',
+                    }}
+                  >
+                    {`${label}: ${value ? 'On' : 'Off'}`}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
         </Animated.ScrollView>
         {/* Always-visible scrollbar. pointerEvents="none" keeps it clear of the
@@ -1010,23 +1250,78 @@ function App() {
       >
         {currentText}
       </Text>
-      {/* numberOfLines is the backstop: the measured size already keeps the
-            digits inside the fitting box, so they never wrap. */}
+      {/* Second hidden probe: the widest pair the seconds can show. It is reported once
+          per font rather than per second, which is what lets their chip be a fixed box
+          that fits any face without twitching on every tick. Mounted whether or not the
+          seconds are on, so switching them on never starts from a guess. */}
       <Text
         numberOfLines={1}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        pointerEvents="none"
         style={{
           ...fontSpecs,
-          fontSize: digitFontSize,
-          color: '#d0fcc5',
+          fontSize: MEASURE_SIZE,
+          opacity: 0,
+          position: 'absolute',
+          left: 0,
+          top: 0,
+        }}
+        onTextLayout={onMeasureSeconds}
+      >
+        {'88'}
+      </Text>
+      {/* The digits live in one box placed exactly where the single Text used to
+          go and sized from the measured line, so the centring and the travel walls
+          are unchanged. Inside it the separator is its own Animated.Text — nested
+          Text children cannot carry an animated opacity — and the optional seconds
+          sit at the bottom-right in a fixed-size chip with a half-transparent fill,
+          lifted up onto the digits' baseline so they hug the text and stay readable
+          where they overlap a digit. This lets them drift with the digits for free
+          and keeps them out of the measurement that sets the size.
+          flexShrink 0 stops Yoga from shaving a piece off the row if splitting it
+          renders a hair wider than the measured advance; numberOfLines stays the
+          wrap backstop, and justifyContent keeps the row centred on the same point
+          whether it comes out a pixel narrower or wider. */}
+      <View
+        style={{
           position: 'absolute',
           left:
             insets.left + (motionBox.width - digitWidth) / 2 + clampedXShift,
           top:
             insets.top + (motionBox.height - digitHeight) / 2 + clampedYShift,
+          width: digitWidth,
+          height: digitHeight,
         }}
       >
-        {currentText}
-      </Text>
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'center',
+            alignItems: 'baseline',
+          }}
+        >
+          <Text numberOfLines={1} style={[digitTextStyle, { flexShrink: 0 }]}>
+            {hoursText}
+          </Text>
+          <Animated.Text
+            numberOfLines={1}
+            style={[digitTextStyle, { flexShrink: 0, opacity: separatorPulse }]}
+          >
+            {':'}
+          </Animated.Text>
+          <Text numberOfLines={1} style={[digitTextStyle, { flexShrink: 0 }]}>
+            {minutesText}
+          </Text>
+        </View>
+        {showSeconds === true && (
+          <View style={secondsChipStyle}>
+            <Text numberOfLines={1} style={secondsTextStyle}>
+              {secondsText}
+            </Text>
+          </View>
+        )}
+      </View>
       <StatusBar hidden={true} />
     </Pressable>
   )
