@@ -40,6 +40,8 @@ import {
 
 import { advanceMotion, motionRanges } from './clockMotion'
 
+import { booleanPref, CHIME_RANGE_DEFAULT, rangePref } from './prefDefaults'
+
 // Preferences. `digitFonts` is the set the clock rotates through and
 // `dailyFontPick` is today's draw from it, `{ id, date }`, kept so a relaunch
 // later the same day shows the face the user already saw. The two legacy keys are
@@ -682,21 +684,25 @@ function App() {
   const clampedYShift = Math.max(-yRange, Math.min(yRange, motion.y))
 
   const initChimingTime = async () => {
-    setChimingTimeRange(
-      JSON.parse(await SecureStore.getItemAsync(CHIMING_TIME_RANGE)) || {
-        min: 0,
-        max: 24,
-      },
-    )
+    try {
+      // Same rule as the toggles: garbage or a missing key lands on the full-day
+      // default instead of throwing. This read runs first in the launch chain, so an
+      // uncaught throw here used to take the tick and the font prefs down with it.
+      setChimingTimeRange(
+        rangePref(await SecureStore.getItemAsync(CHIMING_TIME_RANGE)),
+      )
+    } catch {
+      // The store itself is unreadable: leave the range unloaded rather than invent a
+      // value, so the save effect below writes nothing over what may still be there.
+    }
   }
 
   const initTickingPref = async () => {
     try {
       const saved = await SecureStore.getItemAsync(TICKING_SOUND_KEY)
-      const stored = saved === null ? null : JSON.parse(saved)
-      // Anything other than an explicit `false` — a key never written, or a value this
-      // version does not recognise — means On.
-      setTickingSound(stored !== false)
+      // The shared rule: anything other than an explicit `false` — a key never
+      // written, or a value this version does not recognise — means On.
+      setTickingSound(booleanPref(saved))
     } catch {
       // Unreadable: leave it unloaded, which renders and sounds as On, and the save
       // effect below skips it so a bad read cannot overwrite an intact value.
@@ -733,12 +739,14 @@ function App() {
       )
         setDailyPick(savedPick)
 
+      // Both through the same rule as the tick: absent or unparseable means On, and
+      // only a stored `false` is Off. Neither read can throw out of this init — a
+      // corrupt value lands on On, and the save effects below rewrite it as real JSON.
       setShowSeconds(
-        JSON.parse(await SecureStore.getItemAsync(SHOW_SECONDS_KEY)) === true,
+        booleanPref(await SecureStore.getItemAsync(SHOW_SECONDS_KEY)),
       )
       setPulseSeparator(
-        JSON.parse(await SecureStore.getItemAsync(PULSE_SEPARATOR_KEY)) ===
-          true,
+        booleanPref(await SecureStore.getItemAsync(PULSE_SEPARATOR_KEY)),
       )
 
       // Both legacy keys are gone from the app: drop them so an upgrade leaves no
@@ -837,11 +845,12 @@ function App() {
 
   // The separator's breath: half a cycle down to PULSE_MIN_OPACITY, half back up,
   // entirely on the native thread so the fade costs no re-render. It runs only while
-  // the clock is actually showing and the option is on — otherwise the value is put
-  // back at full opacity, so switching it off leaves a steady colon rather than
-  // freezing mid-breath or animating an unmounted view.
+  // the clock is actually showing and the option is on — that test being "not an
+  // explicit `false`", so a read still outstanding breathes like its On default —
+  // otherwise the value is put back at full opacity, so switching it off leaves a
+  // steady colon rather than freezing mid-breath or animating an unmounted view.
   useEffect(() => {
-    if (pulseSeparator !== true || firstScreen) {
+    if (pulseSeparator === false || firstScreen) {
       separatorPulse.setValue(1)
       return undefined
     }
@@ -893,13 +902,11 @@ function App() {
     }
   }
 
+  // The range writes through the same best-effort helper as every other key, so a
+  // SecureStore failure keeps the dragged range for this session instead of rejecting
+  // inside an effect.
   useEffect(() => {
-    if (chimingTimeRange) {
-      SecureStore.setItemAsync(
-        CHIMING_TIME_RANGE,
-        JSON.stringify(chimingTimeRange),
-      )
-    }
+    if (chimingTimeRange) persistPref(CHIMING_TIME_RANGE, chimingTimeRange)
   }, [chimingTimeRange])
 
   // The tick follows its switch, the active range and the player arriving. A tap on
@@ -1079,6 +1086,102 @@ function App() {
           onScroll={onSettingsScroll}
           scrollEventThrottle={16}
         >
+          {/* First on the screen on purpose: this is how the user leaves it, so it
+              must not sit below anything they may have to scroll past — including the
+              chime range it shares the screen with. */}
+          {/* The one action on this screen, so it is the only thing wearing the
+              clock's own colour: everything else is black-on-white, and this is
+              white-on-clock-green, larger than any other control, and lifted. The
+              hairline keeps the green defined against a white background instead of
+              glowing into it. */}
+          <Pressable
+            onPress={() => setFirstScreen(false)}
+            style={{
+              alignSelf: 'center',
+              alignItems: 'center',
+              marginVertical: 16,
+              paddingVertical: 26,
+              paddingHorizontal: 52,
+              borderRadius: 16,
+              elevation: 12,
+              borderWidth: 1,
+              borderColor: '#080E1D',
+              backgroundColor: '#d0fcc5',
+            }}
+          >
+            <Text
+              style={{ fontWeight: '800', fontSize: 26, color: '#080E1D' }}
+            >{`Show the clock`}</Text>
+          </Pressable>
+
+          {/* The display toggles come next, straight after the button: they are what a
+              user reaches for, while the range and the fonts are set once and rarely
+              revisited. This wrapper keeps the row inert until the preference-read
+              pass has finished — one flag for that whole pass, so what it rules out is
+              a tap racing the reads, not a read that failed: a pill whose own value
+              never arrived goes live on its default like everything else here. */}
+          <View
+            pointerEvents={fontPrefsLoaded ? 'auto' : 'none'}
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              width: '90%',
+              justifyContent: 'center',
+              opacity: fontPrefsLoaded ? 1 : 0.5,
+            }}
+          >
+            {[
+              // Every pill shows the same rule its stored value is read by: Off only
+              // if the user said so. While a read is still outstanding the state is
+              // null, which reads as On — its default — and tapping then turns the
+              // option off rather than on.
+              {
+                label: 'Show seconds',
+                value: showSeconds !== false,
+                onToggle: () => setShowSeconds(showSeconds === false),
+              },
+              {
+                label: 'Pulsing separator',
+                value: pulseSeparator !== false,
+                onToggle: () => setPulseSeparator(pulseSeparator === false),
+              },
+              // The one sound control in this row; its `!== false` also matches the
+              // gate that drives the player.
+              {
+                label: 'Ticking sound',
+                value: tickingSound !== false,
+                onToggle: () => setTickingSound(tickingSound === false),
+              },
+            ].map(({ label, value, onToggle }) => (
+              <Pressable
+                key={label}
+                onPress={onToggle}
+                style={{
+                  margin: 4,
+                  paddingVertical: 10,
+                  paddingHorizontal: 20,
+                  borderRadius: 10,
+                  elevation: 5,
+                  borderWidth: 1,
+                  borderColor: 'black',
+                  backgroundColor: value ? 'black' : 'white',
+                }}
+              >
+                <Text
+                  style={{
+                    fontWeight: '600',
+                    fontSize: 16,
+                    color: value ? 'white' : 'black',
+                  }}
+                >
+                  {`${label}: ${value ? 'On' : 'Off'}`}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* The range's own explanation travels with the slider it describes, so
+              "specified below" stays true wherever the block ends up. */}
           <Text style={styles.title}>
             chimingClock will play chimes every 15 minutes. Sometimes it may get
             too loud for you. The clock will chime only during the time range
@@ -1107,10 +1210,13 @@ function App() {
             ).format('ha')} to ${dayjs(
               `2020-01-01 ${chimingTimeRange?.max}:00`,
             ).format('ha')}`}</Text>
+            {/* The slider's ends are the stored default's ends: one pair of numbers
+                decides both what the control can be dragged to and what a repaired
+                range looks like. */}
             <MultiSlider
               isMarkersSeparated={true}
-              min={0}
-              max={24}
+              min={CHIME_RANGE_DEFAULT.min}
+              max={CHIME_RANGE_DEFAULT.max}
               showSteps={true}
               values={[chimingTimeRange?.min, chimingTimeRange?.max]}
               onValuesChange={(value) =>
@@ -1122,34 +1228,6 @@ function App() {
               }
             />
           </View>
-
-          {/* First of the two settings groups on purpose: this is how the user
-              leaves the screen, and it must not sit behind everything they may
-              have to scroll past. */}
-          {/* The one action on this screen, so it is the only thing wearing the
-              clock's own colour: everything else is black-on-white, and this is
-              white-on-clock-green, larger than any other control, and lifted. The
-              hairline keeps the green defined against a white background instead of
-              glowing into it. */}
-          <Pressable
-            onPress={() => setFirstScreen(false)}
-            style={{
-              alignSelf: 'center',
-              alignItems: 'center',
-              marginVertical: 16,
-              paddingVertical: 26,
-              paddingHorizontal: 52,
-              borderRadius: 16,
-              elevation: 12,
-              borderWidth: 1,
-              borderColor: '#080E1D',
-              backgroundColor: '#d0fcc5',
-            }}
-          >
-            <Text
-              style={{ fontWeight: '800', fontSize: 26, color: '#080E1D' }}
-            >{`Show the clock`}</Text>
-          </Pressable>
 
           <View
             pointerEvents={fontPrefsLoaded ? 'auto' : 'none'}
@@ -1224,60 +1302,6 @@ function App() {
                 ? `rotates daily through ${activePool.length} selected`
                 : 'always this font'}
             </Text>
-            <View
-              style={{
-                flexDirection: 'row',
-                flexWrap: 'wrap',
-                justifyContent: 'center',
-                marginTop: 12,
-              }}
-            >
-              {[
-                {
-                  label: 'Show seconds',
-                  value: showSeconds === true,
-                  onToggle: () => setShowSeconds(showSeconds !== true),
-                },
-                {
-                  label: 'Pulsing separator',
-                  value: pulseSeparator === true,
-                  onToggle: () => setPulseSeparator(pulseSeparator !== true),
-                },
-                // The one sound control in this row. It reads On while its value is
-                // still loading, matching the default and the gate that drives the
-                // player, and tapping it then turns the tick off rather than on.
-                {
-                  label: 'Ticking sound',
-                  value: tickingSound !== false,
-                  onToggle: () => setTickingSound(tickingSound === false),
-                },
-              ].map(({ label, value, onToggle }) => (
-                <Pressable
-                  key={label}
-                  onPress={onToggle}
-                  style={{
-                    margin: 4,
-                    paddingVertical: 10,
-                    paddingHorizontal: 20,
-                    borderRadius: 10,
-                    elevation: 5,
-                    borderWidth: 1,
-                    borderColor: 'black',
-                    backgroundColor: value ? 'black' : 'white',
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontWeight: '600',
-                      fontSize: 16,
-                      color: value ? 'white' : 'black',
-                    }}
-                  >
-                    {`${label}: ${value ? 'On' : 'Off'}`}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
           </View>
         </Animated.ScrollView>
         {/* Always-visible scrollbar. pointerEvents="none" keeps it clear of the
@@ -1410,7 +1434,9 @@ function App() {
             {minutesText}
           </Text>
         </View>
-        {showSeconds === true && (
+        {/* The same on-by-default test as its read and its pill: off only if the user
+            said so, so a fresh install shows the seconds without waiting for a write. */}
+        {showSeconds !== false && (
           <View style={secondsChipStyle}>
             <Text numberOfLines={1} style={secondsTextStyle}>
               {secondsText}
