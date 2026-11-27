@@ -1,5 +1,6 @@
 import {
   DRIFT_STEP,
+  MAX_ANGLE_DEG,
   MIN_ANGLE_DEG,
   advanceMotion,
   motionRanges,
@@ -17,10 +18,13 @@ const EPS = 1e-9
 // quadrant it happens to sit in does not change the answer.
 const angleFromAxes = ({ ux, uy }) =>
   Math.atan2(Math.abs(uy), Math.abs(ux)) / DEG
+// The largest double `Math.random` can hand back: one half-ULP below 1. (1 - EPSILON is
+// not it — at that magnitude the subtraction rounds back to exactly 1.)
+const LARGEST_ROLL = 1 - Number.EPSILON / 2
 // A spread of rolls including both ends of [0,1) — the band's edges are where a leg
-// comes closest to axis-aligned, which is exactly what MIN_ANGLE_DEG exists to prevent.
+// comes closest to axis-aligned, which is what MIN_ANGLE_DEG and MAX_ANGLE_DEG bound.
 const rolls = Array.from({ length: 101 }, (_, i) => i / 102).concat(
-  1 - Number.EPSILON,
+  LARGEST_ROLL,
 )
 
 const insideWalls = (state, walls) => {
@@ -84,13 +88,15 @@ describe('Single wall hit', () => {
   const leftover = DRIFT_STEP - timeToWall
 
   it('lands on the wall and carries the overshoot along the new angle', () => {
-    // A roll of 0 puts the new leg at exactly MIN_ANGLE_DEG off the x axis.
+    // A roll of 0 puts the new leg at the shallow end of the band, where an exact
+    // landing is easiest to lose. The expected position is built from the direction
+    // the tick actually left by, so this tests the landing maths and nothing else.
     const next = advanceMotion(motion, walls, () => 0)
-    const ux = -Math.cos(MIN_ANGLE_DEG * DEG)
-    const uy = Math.sin(MIN_ANGLE_DEG * DEG)
 
-    expect(next.x).toBeCloseTo(walls.x + ux * leftover, 12)
-    expect(next.y).toBeCloseTo(motion.uy * timeToWall + uy * leftover, 12)
+    expect(angleFromAxes(next)).toBeGreaterThan(MIN_ANGLE_DEG)
+    expect(next.ux).toBeLessThan(0)
+    expect(next.x).toBeCloseTo(walls.x + next.ux * leftover, 12)
+    expect(next.y).toBeCloseTo(motion.uy * timeToWall + next.uy * leftover, 12)
   })
 
   it('never leaves the coordinate past the wall it just hit', () => {
@@ -103,8 +109,8 @@ describe('Single wall hit', () => {
   it('leaves at a new angle inside the allowed band', () => {
     const next = advanceMotion(motion, walls, () => 0.5)
 
-    expect(angleFromAxes(next)).toBeGreaterThanOrEqual(MIN_ANGLE_DEG - EPS)
-    expect(angleFromAxes(next)).toBeLessThanOrEqual(90 - MIN_ANGLE_DEG + EPS)
+    expect(angleFromAxes(next)).toBeGreaterThan(MIN_ANGLE_DEG)
+    expect(angleFromAxes(next)).toBeLessThan(MAX_ANGLE_DEG)
   })
 
   it('points away from the wall it hit and keeps the other axis going', () => {
@@ -400,11 +406,48 @@ describe('Injected randomness', () => {
     )
 
     angles.forEach((angle) => {
-      expect(angle).toBeGreaterThanOrEqual(MIN_ANGLE_DEG - EPS)
-      expect(angle).toBeLessThanOrEqual(90 - MIN_ANGLE_DEG + EPS)
+      expect(angle).toBeGreaterThan(MIN_ANGLE_DEG)
+      expect(angle).toBeLessThan(MAX_ANGLE_DEG)
     })
-    expect(Math.min(...angles)).toBeCloseTo(MIN_ANGLE_DEG, 6)
-    expect(Math.max(...angles)).toBeCloseTo(90 - MIN_ANGLE_DEG, 6)
+    // The band is open at both ends, so the shallowest and steepest draws sit just
+    // inside their bounds rather than on them.
+    expect(Math.min(...angles)).toBeLessThan(MIN_ANGLE_DEG + 1e-3)
+    expect(Math.max(...angles)).toBeGreaterThan(MAX_ANGLE_DEG - 1e-3)
+  })
+
+  it('draws the band in the numbers the intent asks for', () => {
+    // Pinned literally rather than through the constants: if the band ever moves, this
+    // has to say so instead of quietly following it along.
+    expect(MIN_ANGLE_DEG).toBe(1)
+    expect(MAX_ANGLE_DEG).toBe(89)
+
+    const shallow = angleFromAxes(advanceMotion(motion, walls, () => 0))
+    const steep = angleFromAxes(
+      advanceMotion(motion, walls, () => LARGEST_ROLL),
+    )
+
+    expect(shallow).toBeGreaterThan(1)
+    expect(shallow).toBeLessThan(1.001)
+    expect(steep).toBeLessThan(89)
+    expect(steep).toBeGreaterThan(88.999)
+  })
+
+  it('stays inside the band, and in the right quadrant, at both roll extremes', () => {
+    // 0 and LARGEST_ROLL are the two ends of Math.random's range; neither may put a leg
+    // on a bound. The box is generous on y so each draw stays a single bounce, which is
+    // what makes the leaving-quadrant check worth having: angleFromAxes folds the signs
+    // away, so band membership alone would not catch a leg pointing back into the wall.
+    const deepWalls = { x: 1, y: 100 }
+    const nearWall = { x: 0.95, y: 0, ux: 0.6, uy: 0.8 }
+
+    ;[0, Number.MIN_VALUE, LARGEST_ROLL].forEach((roll) => {
+      const next = advanceMotion(nearWall, deepWalls, () => roll)
+
+      expect(angleFromAxes(next)).toBeGreaterThan(1)
+      expect(angleFromAxes(next)).toBeLessThan(89)
+      expect(next.ux).toBeLessThan(0)
+      expect(next.uy).toBeGreaterThan(0)
+    })
   })
 })
 

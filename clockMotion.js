@@ -11,13 +11,29 @@
 // wall at a shallow angle covers the same ground per second, only spread differently.
 export const DRIFT_STEP = 1 / 3
 
-// The smallest angle a leg may make with either axis, in degrees. At exactly 0° the
-// perpendicular component would be zero and that axis would stop moving for good, so
-// every leg is drawn inside [MIN_ANGLE_DEG, 90 - MIN_ANGLE_DEG] instead. 3° still
-// allows a graze that runs almost parallel to an edge — the accepted cost: such a leg
-// can take tens of minutes to reach the next wall on that axis, and its off-wall axis
-// carries only ~5% of the speed (still nonzero, so motion never stalls).
-export const MIN_ANGLE_DEG = 3
+// The band a new leg's angle must land in, in degrees measured from the x axis — the
+// same frame drawAngle works in and the tests' angleFromAxes reads back. Because the
+// two bounds are complementary, that also means every leg sits more than 1° off *each*
+// axis and less than 89° off it: never parallel to an edge, never straight at a wall.
+// At exactly 0° the perpendicular component would be zero and that axis would stop
+// moving for good, so nothing is ever drawn on a bound. The band is deliberately
+// shallow at the low end — a graze that runs almost along an edge is wanted — and the
+// accepted cost is that such a leg can
+// take hours rather than minutes to reach the next wall on that axis (1/sin 1° ≈ 57
+// times the crossing time of a perpendicular leg), while its off-wall axis carries only
+// sin 1° ≈ 1.7% of the speed. Nonzero, so motion never stalls, but it must never be
+// rounded away.
+export const MIN_ANGLE_DEG = 1
+export const MAX_ANGLE_DEG = 89
+
+// How far inside the band a drawn angle is held, in degrees. What this guards is
+// `roll === 0` — Math.random returns [0,1) and does hand back 0 — which without an
+// inset would land *on* MIN_ANGLE_DEG rather than strictly above it, and the symmetric
+// draw just below 1. 1e-6° is far too small for any screen to show, yet comfortably
+// above the ~1e-14° round-off of the cos/sin path, so a strict `> MIN_ANGLE_DEG` check
+// cannot be tripped by float noise. Shrinking it towards that round-off would make the
+// open band unprovable.
+const BAND_INSET_DEG = 1e-6
 
 // A reflection loop bound. With a near-zero range a leg can in principle bounce
 // several times inside one tick; three is plenty for a real window, and it is what
@@ -41,16 +57,18 @@ const leaveSign = (landedOnWall, current) => {
   return current >= 0 ? 1 : -1
 }
 
-// A fresh leg: `roll` of [0,1) maps onto the allowed band, placed in the quadrant
-// handed in. The randomness is injected rather than read from Math.random here, so
-// both determinism and randomness are provable from a test. An unusable draw returns
-// null and leaves the caller on the angle it already had.
+// A fresh leg: `roll` of [0,1) maps onto the open band (MIN_ANGLE_DEG, MAX_ANGLE_DEG),
+// placed in the quadrant handed in. The inset at each end keeps both bounds out of
+// reach for every legal roll, including 0 and one a hair under 1. The randomness is
+// injected rather than read from Math.random here, so both determinism and randomness
+// are provable from a test. An unusable draw returns null and leaves the caller on the
+// angle it already had.
 const drawAngle = (rand, sx, sy) => {
   if (typeof rand !== 'function') return null
   const roll = rand()
   if (!Number.isFinite(roll) || roll < 0 || roll >= 1) return null
-  const theta =
-    ((MIN_ANGLE_DEG + roll * (90 - 2 * MIN_ANGLE_DEG)) * Math.PI) / 180
+  const span = MAX_ANGLE_DEG - MIN_ANGLE_DEG - 2 * BAND_INSET_DEG
+  const theta = ((MIN_ANGLE_DEG + BAND_INSET_DEG + roll * span) * Math.PI) / 180
   return { ux: sx * Math.cos(theta), uy: sy * Math.sin(theta) }
 }
 
@@ -112,7 +130,7 @@ export function advanceMotion(motion, walls, rand) {
     // register a hit, so its component of the direction is dropped and only the other
     // axis's own component carries the tick. That is less than DRIFT_STEP overall — by
     // cos or sin of the leg's angle — so a leg grazing the band edge (see
-    // MIN_ANGLE_DEG) moves its free axis by as little as ~5% of the speed. Still
+    // MIN_ANGLE_DEG) moves its free axis by as little as ~1.7% of the speed. Still
     // nonzero, which is what keeps a one-axis window from ever looking frozen.
     const stepX = rangeX > 0 ? ux * remaining : 0
     const stepY = rangeY > 0 ? uy * remaining : 0
