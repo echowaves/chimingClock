@@ -6,7 +6,7 @@
 
 - source_plan: `_bmad-output/plan-app-store-icon.md`
   summary: Splash screen still shows the old orange-bell artwork with a white background, clashing with the new navy Luminous icon.
-  evidence: assets/splash.png dominant colors are near-black plus orange #B2472E (old branding); app.json expo-splash-screen backgroundColor is #ffffff while the new icon/adaptive background is #080E1D.
+  evidence: assets/splash.png dominant colors are near-black plus orange #B2472E (old branding); app.json expo-splash-screen backgroundColor is #ffffff while the new icon/adaptive background is #080E1D. [CLOSED 2026-11-27: all four assets replaced with the glowing 9:30 artwork — splash.png is now that motif as a badge on a navy field, and app.json's expo-splash-screen backgroundColor moved to #030726 (the field's mean) so the pre-render flash and any letterbox blend instead of flashing white. Needs a fresh native build to reach devices.]
 - source_plan: `/Users/dmitry/hacks/chimingClock/_bmad-output/plan-settings-screen-scroll.md`
   summary: Vertical scrolling is blocked where the MultiSlider thumbs and between-track capture the pan gesture, so users must scroll from other areas of the settings screen.
   evidence: MultiSlider sets onMoveShouldSetPanResponderCapture: true, onPanResponderTerminationRequest: false and onShouldBlockNativeResponder: true (node_modules/@ptomasroos/react-native-multi-slider/MultiSlider.js:78-87) on the marker and between views; verified in source. Real (medium); a scrollEnabled-toggle workaround risks breaking the currently-working drag and cannot be device-verified in this environment.
