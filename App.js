@@ -85,6 +85,16 @@ const PULSE_HALF_PERIOD_MS = 1500
 const persistPref = (key, value) =>
   SecureStore.setItemAsync(key, JSON.stringify(value)).catch(() => {})
 
+// An hour of the day as the user reads it: 0 → "12am", 13 → "1pm". The range's upper
+// end is exclusive and reaches 24, which wraps to midnight just as a clock does. Done
+// with arithmetic rather than formatting a date, because an hour needs no calendar —
+// and building a date string like "2020-01-01 8:00" would leave this label depending on
+// the engine's non-ISO date parsing to render a number we already have.
+const hourLabel = (hour) => {
+  const h = ((hour % 24) + 24) % 24
+  return `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}`
+}
+
 // Each digit font carries the weight it wants. iOS answers a `fontFamily` request
 // with the face in that family whose weight is closest to the one asked for
 // (RCTFontUtils.mm), so asking a family for a weight it does not have gets the next
@@ -1028,6 +1038,14 @@ function App() {
     [settingsScrollY, hiddenHeight, trackHeight, thumbHeight],
   )
 
+  // What the chime block draws, before and after its read: the full day until a stored
+  // range arrives. Both the sentence and the two thumbs use this, because an unloaded
+  // `null` is visible here in a way it isn't elsewhere — the label would format
+  // `undefined` hours as "Invalid Date", and the slider places a value it cannot find
+  // on its last step, parking both thumbs at 24. Saving stays guarded on the real
+  // value being loaded, so this display default is never written back as a choice.
+  const displayedChimeRange = chimingTimeRange ?? CHIME_RANGE_DEFAULT
+
   const styles = StyleSheet.create({
     firstScreen: {
       backgroundColor: 'white',
@@ -1205,11 +1223,9 @@ function App() {
                 fontSize: 20,
                 fontWeight: '600',
               }}
-            >{`chimes active from ${dayjs(
-              `2020-01-01 ${chimingTimeRange?.min}:00`,
-            ).format('ha')} to ${dayjs(
-              `2020-01-01 ${chimingTimeRange?.max}:00`,
-            ).format('ha')}`}</Text>
+            >{`chimes active from ${hourLabel(
+              displayedChimeRange.min,
+            )} to ${hourLabel(displayedChimeRange.max)}`}</Text>
             {/* The slider's ends are the stored default's ends: one pair of numbers
                 decides both what the control can be dragged to and what a repaired
                 range looks like. */}
@@ -1218,7 +1234,7 @@ function App() {
               min={CHIME_RANGE_DEFAULT.min}
               max={CHIME_RANGE_DEFAULT.max}
               showSteps={true}
-              values={[chimingTimeRange?.min, chimingTimeRange?.max]}
+              values={[displayedChimeRange.min, displayedChimeRange.max]}
               onValuesChange={(value) =>
                 setChimingTimeRange({
                   ...chimingTimeRange,
