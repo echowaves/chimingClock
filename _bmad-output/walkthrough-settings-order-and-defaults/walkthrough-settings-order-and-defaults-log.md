@@ -233,3 +233,11 @@ Session: 69dfdb27-7459-4fbf-bde9-e11327632dd2 · Timestamp: 2026-11-27T20:47:20-
 - Ran at HEAD `8722214`: `npx jest --ci` → Test Suites 4 passed / 4, Tests 87 passed / 87 (prefDefaults 10, soundGating 14 re-run individually earlier during Blocks 6 and 3). `npx eslint App.js prefDefaults.js fontSelection.js clockMotion.js soundGating.js __tests__` → exit 0, no output. `npx prettier --check "**/*.js"` → all files match Prettier style.
 - Context: everything committed since the reviewed commit is docs except `8722214`, which changed only a comment in prefDefaults.js — so this run also confirms that commit did not disturb behavior.
 - Recorded in the narrative header so a future reader sees suite status at review close rather than only at build time. Still unverified anywhere: the device-only checks listed in the plan's Verification section (fresh-install defaults, toggle-off → force-quit → relaunch, chime-range restore) and the launch-window `Invalid Date` observation added to that checklist.
+
+## 25 — wrap-up executed: docs committed, renders tracked, main pushed
+Session: 69dfdb27-7459-4fbf-bde9-e11327632dd2 · Timestamp: 2026-11-27T20:49:40-0500
+
+- `497e088` "docs: record the walkthrough review of the settings defaults change" — plan ref/snippet/checklist fixes, deferred-work ref and stale clause, narrative + this log.
+- `c77e46a` "chore: track the rendered bmad-walkthrough steps for this review" — `_bmad/render/bmad-walkthrough/` (24K, workflow + three steps + manifest + log template), matching how the bmad-build renders are tracked.
+- `git push` → `f16da6a..c77e46a main -> main`; branch now level with origin/main, working tree clean. Four commits came out of this review: `0923e07`, `8722214`, `497e088`, `c77e46a`.
+- Review closed. Open items left for a human, all recorded outside this log where they need action: the device-only checks in the plan's Verification section (including the newly added launch-window observation), and the stranding-read fix in `_bmad-output/deferred-work.md`. Deliberately log-only by the reviewer's choice: ungated `Show the clock` button, chime block gating inconsistency, loud-repair trade-off.
