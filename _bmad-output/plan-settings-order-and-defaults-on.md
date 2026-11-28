@@ -105,17 +105,17 @@ Verification: `npm test` → 87 passed / 4 suites; `npx eslint prefDefaults.js A
 
 Pass 1 — lens `quick` (thorough-only lenses skipped), 0 high / 0 medium / 4 low / 3 false / 0 maybe-false. No loopback.
 
-- **low → patch** `App.js:1118-1120`: the new wrapper comment promised "no pill can be tapped before the value it is about to show has been read". The gate is the single `fontPrefsLoaded` flag set in `initDigitFontPrefs`'s `finally` (`App.js:758`), and the digit-fonts / daily-pick reads at `App.js:723`/`730` can throw before the seconds and separator reads run — leaving those two `null` while the pills go live, where a tap writes. Comment reworded to describe the gate it actually provides; no new flags added. The underlying overwrite hazard is pre-existing (the ticking pill read `!== false` this same way before the change) and is deferred separately.
+- **low → patch** `App.js:1118-1120`: the new wrapper comment promised "no pill can be tapped before the value it is about to show has been read". The gate is the single `fontPrefsLoaded` flag set in `initDigitFontPrefs`'s `finally` (`App.js:758`), and the digit-fonts / daily-pick reads at `App.js:722`/`730` can throw before the seconds and separator reads run — leaving those two `null` while the pills go live, where a tap writes. Comment reworded to describe the gate it actually provides; no new flags added. The underlying overwrite hazard is pre-existing (the ticking pill read `!== false` this same way before the change) and is deferred separately.
 - **false** `App.js:742-744`: claim was that a rejecting `SecureStore.getItemAsync` still escapes `initDigitFontPrefs`, contradicting "neither read can throw out of this init". It does not — the whole body sits in the `try` at `App.js:716` whose `catch` at `App.js:755` absorbs it, which is exactly what the sentence describes. What *is* true (later reads and the legacy deletions are skipped) is the pre-existing hazard logged above.
 - **false** `App.js:853`/`1434`: claim was that AC 3 fails because a user with `"false"` stored sees On when their read fails. That path is specified behaviour, not a defect — the frozen matrix row "Read fails" states the pref stays `null`, renders its default, and writes nothing back, so the stored value survives; AC 3 concerns the successful-read path, which the Off cases in `__tests__/prefDefaults.test.js` pin.
-- **low → rejected** (`App.js:1090-1180` ordering, store-throw guards, toggle→relaunch round trip have nothing automated behind them). Real coverage gap, but `jest.config.js` is node-only by design and a React Native harness is excluded by this plan's Boundaries; the fix is far more than a correction. Ordering was verified statically (button `1114` → pills `1137-1149` → slider `1211` → fonts `1246`) and the rest stays on the device checklist in **Verification**.
+- **low → rejected** (`App.js:1090-1180` ordering, store-throw guards, toggle→relaunch round trip have nothing automated behind them). Real coverage gap, but `jest.config.js` is node-only by design and a React Native harness is excluded by this plan's Boundaries; the fix is far more than a correction. Ordering was verified statically (button `1114` → pill row `1136-1155` → slider `1216` → fonts group `1231`, heading `1251`) and the rest stays on the device checklist in **Verification**.
 - **low → patch** `prefDefaults.js:30`: `CHIME_RANGE_DEFAULT` was exported with no consumer while `MultiSlider` kept its own `min={0}`/`max={24}`, so the repair rule and the control could drift apart. The slider now takes both bounds from the constant.
 - **false** `App.js:1121-1130`: claim was a restyle against "don't restyle or rewrite the controls". The `fontPrefsLoaded` `pointerEvents`/opacity wrapper is required verbatim by this plan's own task list; what travelled with the block is container spacing (`marginTop` dropped, `width: '90%'` added for its new position), and every pill's own styles are byte-identical to the removed block.
 - **low → defer** `.github/instructions/codacy.instructions.md` asks for a `codacy_cli_analyze` pass on each edited file; no Codacy tool is exposed in this session, so the pass could not be run for `App.js`, `prefDefaults.js` or `__tests__/prefDefaults.test.js`. Recorded as a new `deferred-work.md` entry.
 
 ## Design Notes
 
-One rule, three call sites today (`=== true`, `!== false`, and the sliders' own default). Collapsing them:
+One rule, three call sites as they stood before this change (`=== true`, `!== false`, and the sliders' own default). Collapsing them:
 
 ```js
 // prefDefaults.js — absent means on: an option is Off only if the user said so.
@@ -123,6 +123,8 @@ export const booleanPref = (rawStored) => JSON.parse(rawStored) !== false
 ```
 
 `JSON.parse(null)` → `null`, garbage throws — both must land on On, never on a thrown read poisoning state; the test file pins that.
+
+> **This snippet is the plan-time sketch, not the shipped code.** The line above parses unguarded, so garbage would throw out of the read it was meant to protect; `prefDefaults.js:14` wraps the same parse in `try`/`catch` and returns On from the catch. Copy the module, not this snippet.
 
 ## Verification
 
@@ -135,3 +137,4 @@ export const booleanPref = (rawStored) => JSON.parse(rawStored) !== false
 - Fresh install (or clear storage): settings screen shows the button at top, then Show seconds / Pulsing separator; clock has seconds and a pulsing colon without touching anything.
 - Turn both off → force-quit → relaunch: both read Off, colon steady, no seconds.
 - Drag the chime range, restart: range restored. Tap fonts off, restart: same set restored.
+- Watch the chime block during launch (not caused by this change, so note it rather than reporting it): its block is the only one on the screen without a `fontPrefsLoaded` gate, so while the reads are still running its label can briefly read `chimes active from Invalid Date to Invalid Date`, and the slider receives `[undefined, undefined]`. Everything else on the screen is dimmed and inert in that window; the `Show the clock` button is live by design.
