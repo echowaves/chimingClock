@@ -1,0 +1,37 @@
+{
+  "generation_hash": "2d7d18eabec7cf89ba3e",
+  "inputs": {
+    "jinja2_version": "3.1.6",
+    "project_root": "/Users/dmitry/hacks/chimingClock",
+    "renderer_sha256": "82b4d567c335a596d086d94b4772d0a4a9e09065f84b45c3647276593d02552c",
+    "resolved_values": {
+      "config.core.output_folder": "/Users/dmitry/hacks/chimingClock/_bmad-output",
+      "customization.workflow.on_activation": "",
+      "customization.workflow.on_block_activation": "",
+      "customization.workflow.on_block_complete": "",
+      "customization.workflow.on_complete": "",
+      "customization.workflow.persistent_facts": [],
+      "initiative_folder": "/Users/dmitry/hacks/chimingClock/_bmad-output"
+    },
+    "skill_root": "/Users/dmitry/hacks/chimingClock/.agents/skills/bmad-walkthrough",
+    "source_sha256": {
+      "step-01-orientation.md": "6d54c3418762cdc24d6edfae529e856f305ad49456538c7db7c636775c917d29",
+      "step-02-narrative.md": "bfedc6a74ea43c2168f234b842bebfb1dd678991b516ddeca91d066b25e2b1c6",
+      "step-03-walkthrough.md": "32fd4ffab64e1829789f941e37ce830c95257bf6ed5d5a8ae539ec3a564945f9",
+      "templates/log-template.md": "ebf59c7f6a85dfccea6f580e8a35363a0a8641e66067427ec803592d297ae770",
+      "workflow.md": "4dc8ed89f5381fdd9e488d4d9831c39fda968d9bc04c92af94199120f4bc6d81"
+    }
+  },
+  "outputs": {
+    "step-01-orientation.md": "b4dbd76b416f843231f045e0b8517b5ea7fd54fa4bf78214e8ab5c6753d21e0b",
+    "step-02-narrative.md": "e7d991ea081daf0e539df0ea4b4fdb5031dcb337ab49f42d6f77aad0e1e822d6",
+    "step-03-walkthrough.md": "ef6e6e7dcef093956467175db9e24ae4b49f3ac7817a9d4b0b86db17deb48bea",
+    "templates/log-template.md": "e4992dcf11a8c0c798c8f63c75417a8777f2b2c74c1b38bdaf3f676513f0875d",
+    "workflow.md": "9681bc724e990757c3e429fb072e743da82fec45ba0e083c51521c928625c1e9"
+  },
+  "project_root": "/Users/dmitry/hacks/chimingClock",
+  "project_slug": "chimingclock",
+  "root_hash": "dfcb2c504812",
+  "schema_version": 1,
+  "skill": "bmad-walkthrough"
+}
