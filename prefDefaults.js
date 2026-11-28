@@ -1,6 +1,10 @@
 // How a stored preference is interpreted, kept free of React, React Native and
-// SecureStore so it can be tested on its own (see __tests__). Every read goes through
-// one of these, so "what does a fresh install get?" has the same answer everywhere.
+// SecureStore so it can be tested on its own (see __tests__). Every boolean read and
+// the chime range go through one of these, so "what does a fresh install get?" has the
+// same answer there. The font-set and daily-pick reads are the exceptions: they are
+// shapes rather than switches, so they are decoded by `resolveSelectedFonts` in
+// fontSelection.js and by their reader instead — which is why those two, and only
+// those, can still throw a bad stored value up into the read that made them.
 //
 // One rule serves all of the toggles because they answer the same question: did the
 // user turn this off? A key that was never written — a fresh install, or an upgrade
